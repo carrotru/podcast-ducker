@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Podcast 多軌自動閃避</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout: DAW-style workspace. Timeline on the left, controls on the right, transport bar at the bottom. One dark studio theme. */
+  --bg:#13161b;
+  --panel:#1a1e25;
+  --line:#2a303a;
+  --ink:#e7eaef;
+  --muted:#8d96a4;
+  --accent:#f0a24b;
+  --field:#0f1216;
+  --btn:#252b35;
+  --font-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--font-body);display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}
+header.top{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;background:var(--panel)}
+header.top h1{font-size:16px;font-weight:700;margin:0;letter-spacing:.02em;text-wrap:balance}
+header.top .sub{color:var(--muted);font-size:12px}
+.spacer{flex:1}
+button{font:inherit;font-size:13px;color:var(--ink);background:var(--btn);border:1px solid #363e4b;border-radius:6px;padding:6px 11px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+button:hover{background:#2e3541}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.primary{background:var(--accent);color:#22170a;border-color:var(--accent);font-weight:700}
+button.primary:hover{filter:brightness(1.08);background:var(--accent)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.on{background:#3a2b17;border-color:var(--accent);color:var(--accent)}
+button.mini{padding:2px 8px;font-size:11.5px;border-radius:4px}
+main{display:grid;grid-template-columns:minmax(0,1fr) 350px;min-height:0}
+.tlwrap{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid var(--line)}
+#overview{height:34px;width:100%;display:block;cursor:pointer;border-bottom:1px solid var(--line);background:#101318}
+.tl{display:grid;grid-template-columns:176px minmax(0,1fr);flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start}
+.heads{border-right:1px solid var(--line);background:var(--panel)}
+.heads .rs{height:26px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 10px;font-size:11px;color:var(--muted)}
+.head{height:92px;border-bottom:1px solid var(--line);padding:7px 8px 7px 10px;display:flex;flex-direction:column;gap:4px}
+.head.drop{background:#2b2418}
+.head .row{display:flex;gap:5px;align-items:center;min-width:0}
+.head input.name{background:transparent;border:1px solid transparent;color:var(--ink);font:inherit;font-weight:700;font-size:13.5px;width:100%;min-width:0;padding:1px 4px;border-radius:4px}
+.head input.name:hover,.head input.name:focus{border-color:var(--line);background:var(--field)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.head .file{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.head .x{padding:0 6px;font-size:12px;line-height:18px;background:transparent;border-color:transparent;color:var(--muted)}
+.head .x:hover{color:var(--ink);background:var(--btn)}
+.cvwrap{position:relative;min-width:0}
+#cv{display:block;width:100%;touch-action:none}
+aside{overflow-y:auto;background:var(--panel);min-height:0}
+section.box{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+h2{font-size:13px;margin:0;font-weight:700;letter-spacing:.04em;display:flex;align-items:center;gap:8px;text-wrap:balance}
+.field{display:grid;grid-template-columns:1fr auto;gap:0 10px;align-items:center}
+.field label{font-size:12.5px}
+.field output{font-family:var(--font-mono);font-size:12px;color:var(--accent);font-variant-numeric:tabular-nums}
+.field input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent);margin:2px 0 0}
+.hint{font-size:12px;color:var(--muted);margin:0;line-height:1.55}
+.tabs{display:flex;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{flex:1;border:0;border-radius:0;background:transparent;padding:10px 6px;color:var(--muted);border-bottom:2px solid transparent;justify-content:center}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane[hidden]{display:none}
+textarea{width:100%;min-height:130px;background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px;font:12px/1.55 var(--font-mono);resize:vertical}
+select,input[type=text]{background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 7px;font:inherit;font-size:13px;min-width:0}
+input[type=text]{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:72px 1fr;gap:6px 8px;align-items:center;font-size:12.5px}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap}
+.tlist{display:flex;flex-direction:column;max-height:380px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.tline{display:grid;grid-template-columns:auto 1fr;gap:1px 8px;padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12.5px;align-items:baseline}
+.tline:last-child{border-bottom:0}
+.tline:hover{background:#222832}
+.tline.cur{background:#2b2418}
+.tline .tm{font-family:var(--font-mono);color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.tline .tx{grid-column:1/-1;color:#c6ccd5}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid #363e4b;border-radius:7px;overflow:hidden}
+.seg button{border:0;border-radius:0;justify-content:center;padding:8px 0;background:var(--btn)}
+.seg button+button{border-left:1px solid #363e4b}
+.seg button.on{background:var(--accent);color:#22170a;font-weight:700}
+.dl{color:var(--accent);font-size:12.5px;text-decoration:none;overflow-wrap:anywhere}
+.dl:hover{text-decoration:underline}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:500}
+.chip i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.maprow{display:grid;grid-template-columns:1fr 150px;gap:8px;align-items:center;font-size:12.5px}
+.check{display:flex;gap:7px;align-items:flex-start;font-size:12.5px}
+.check input{accent-color:var(--accent);margin-top:3px}
+.banner{background:#2b2418;border:1px solid #5b4321;color:#f4d4ab;font-size:12.5px;padding:9px 11px;border-radius:6px;line-height:1.55}
+.progress{height:6px;background:var(--field);border-radius:3px;overflow:hidden}
+.progress>div{height:100%;background:var(--accent);width:0}
+footer.transport{display:flex;align-items:center;gap:12px;padding:8px 16px;border-top:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.time{font-family:var(--font-mono);font-size:15px;font-variant-numeric:tabular-nums;min-width:190px}
+.time .d{color:var(--muted)}
+.zoom{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.zoom input{accent-color:var(--accent);width:130px}
+#status{font-size:12.5px;color:var(--muted);flex:1;min-width:220px;text-align:right;display:flex;justify-content:flex-end;align-items:center;gap:8px}
+#status.err{color:#ff8a7a}
+#status.ok{color:#9ad8a3}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12px;color:var(--muted)}
+kbd{font-family:var(--font-mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--ink);background:var(--field);white-space:nowrap}
+@media (max-width:900px){
+  body{overflow:auto;height:auto}
+  main{grid-template-columns:1fr}
+  .tl{grid-template-columns:130px minmax(0,1fr);max-height:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>Podcast 多軌自動閃避</h1>
+  </div>
+  <div class="spacer"></div>
+  <button id="btnOpenAll" class="primary">載入音檔（可一次多選）</button>
+  <input type="file" id="fileAll" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.aif,.aiff" multiple hidden>
+  <button id="btnDemo">重新載入示範</button>
+  <button id="btnUndo" title="復原（Ctrl/⌘ + Z）">復原</button>
+  <button id="btnRedo" title="重做（Ctrl/⌘ + Shift + Z）">重做</button>
+</header>
+
+<main>
+  <div class="tlwrap">
+    <canvas id="overview" aria-label="全集總覽，點擊跳到該位置"></canvas>
+    <div class="tl" id="tl">
+      <div class="heads" id="heads"></div>
+      <div class="cvwrap" id="cvwrap"><canvas id="cv" aria-label="時間軸"></canvas></div>
+    </div>
+  </div>
+
+  <aside>
+    <section class="box" id="selBox" hidden>
+      <h2>選取的段落</h2>
+      <p class="hint" id="selNone" hidden></p>
+      <div id="selEdit" hidden>
+        <div class="grid2">
+          <label for="selTrack">屬於</label><select id="selTrack"></select>
+          <label for="selStart">開始</label><input type="text" id="selStart" spellcheck="false">
+          <label for="selEnd">結束</label><input type="text" id="selEnd" spellcheck="false">
+        </div>
+        <div class="btnrow" style="margin-top:10px">
+          <button id="selPlay">播放此段</button>
+          <button id="selSplit">在播放頭分割</button>
+          <button id="selDel">刪除</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-duck" aria-selected="true" aria-controls="pane-duck">設定</button>
+      <button role="tab" id="tab-tr" aria-selected="false" aria-controls="pane-tr">逐字稿</button>
+      <button role="tab" id="tab-ex" aria-selected="false" aria-controls="pane-ex">匯出</button>
+    </div>
+
+    <div class="pane" id="pane-duck" role="tabpanel">
+      <section class="box">
+        <div class="banner" id="demoBanner">示範音檔</div>
+        <h2>閃避強度</h2>
+        <div class="seg" id="presetDuck" role="group" aria-label="閃避強度">
+          <button data-v="low">低</button><button data-v="mid">中</button><button data-v="high">高</button>
+        </div>
+        <h2>判斷講者</h2>
+        <div class="seg" id="presetAn" role="group" aria-label="判斷講者的嚴格程度">
+          <button data-v="low">寬鬆</button><button data-v="mid">標準</button><button data-v="high">嚴格</button>
+        </div>
+        <button id="btnAnalyze" hidden>重新分析</button>
+        <details>
+          <summary class="hint" style="cursor:pointer">自訂參數</summary>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+            <div class="field"><label for="pDuck">降低</label><output id="oDuck"></output><input type="range" id="pDuck" min="-40" max="-3" step="1"></div>
+            <div class="field"><label for="pFade">淡入淡出</label><output id="oFade"></output><input type="range" id="pFade" min="10" max="600" step="10"></div>
+            <div class="field"><label for="pPre">段落前保留</label><output id="oPre"></output><input type="range" id="pPre" min="0" max="600" step="10"></div>
+            <div class="field"><label for="pPost">段落後保留</label><output id="oPost"></output><input type="range" id="pPost" min="0" max="1000" step="10"></div>
+            <div class="field"><label for="aDom">高於串音</label><output id="oDom"></output><input type="range" id="aDom" min="1" max="18" step="0.5"></div>
+            <div class="field"><label for="aGate">高於底噪</label><output id="oGate"></output><input type="range" id="aGate" min="0" max="40" step="1"></div>
+            <div class="field"><label for="aGap">合併停頓</label><output id="oGap"></output><input type="range" id="aGap" min="0" max="2000" step="50"></div>
+            <div class="field"><label for="aMin">忽略短音</label><output id="oMin"></output><input type="range" id="aMin" min="0" max="1500" step="50"></div>
+          </div>
+        </details>
+        <details>
+          <summary class="hint" style="cursor:pointer">快速鍵</summary>
+          <div class="keys" style="margin-top:8px">
+            <span><kbd>Space</kbd></span><span>播放／暫停</span>
+            <span><kbd>Delete</kbd></span><span>刪除段落</span>
+            <span><kbd>N</kbd></span><span>下一個待確認</span>
+            <span><kbd>S</kbd></span><span>在播放頭分割</span>
+            <span><kbd>I</kbd> <kbd>O</kbd></span><span>開始／結束設到播放頭</span>
+            <span><kbd>←</kbd> <kbd>→</kbd></span><span>移動 1 秒（Shift：5 秒）</span>
+            <span><kbd>Ctrl/⌘</kbd>＋滾輪</span><span>縮放</span>
+            <span><kbd>Ctrl/⌘ Z</kbd></span><span>復原（Shift：重做）</span>
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <div class="pane" id="pane-tr" role="tabpanel" hidden>
+      <section class="box">
+        <div class="btnrow">
+          <button id="trCopy" class="primary">① 複製 AI 指令</button>
+          <button id="trAI" hidden>讓 Claude 判斷</button>
+        </div>
+        <textarea id="trText" spellcheck="false" placeholder="② 貼上 AI 的回覆"></textarea>
+        <input type="file" id="trFile" accept=".srt,.vtt,.txt,.json,text/*,application/json" hidden>
+        <div class="btnrow"><button id="trPick" class="mini">選擇檔案</button></div>
+        <p class="hint" id="trMsg"></p>
+        <div id="mapBox" hidden style="display:flex;flex-direction:column;gap:6px">
+          <h2>③ 對應音檔</h2>
+          <div id="mapRows" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+      </section>
+      <section class="box" id="tlistBox" hidden>
+        <h2>逐字稿 <span class="hint" id="trCount"></span></h2>
+        <div class="tlist" id="tlist"></div>
+      </section>
+    </div>
+
+    <div class="pane" id="pane-ex" role="tabpanel" hidden>
+      <section class="box">
+        <h2>匯出</h2>
+        <div class="grid2">
+          <label for="exSuffix">檔名加上</label>
+          <input type="text" id="exSuffix" value="（降噪）" spellcheck="false" style="font-family:var(--font-body)">
+          <span></span><span class="hint" id="exPreview"></span>
+          <label for="exBits">位元深度</label>
+          <select id="exBits"><option value="24">24-bit</option><option value="16">16-bit</option></select>
+        </div>
+        <label class="check"><input type="checkbox" id="exMix"><span>另外輸出混音檔</span></label>
+        <label class="check"><input type="checkbox" id="exJson" checked><span>附上段落資料（JSON）</span></label>
+        <button id="btnExport" class="primary">匯出</button>
+        <div class="progress" id="exProg" hidden><div></div></div>
+        <p class="hint" id="exMsg"></p>
+        <button id="exRetry" hidden>再下載一次</button>
+        <div id="exLinks" hidden style="display:flex;flex-direction:column;gap:4px"></div>
+      </section>
+      <section class="box">
+        <h2>專案</h2>
+
+        <div class="btnrow">
+          <button id="btnSaveProj">儲存專案（JSON）</button>
+          <button id="btnOpenProj">開啟專案</button>
+          <input type="file" id="projFile" accept=".json,application/json" hidden>
+        </div>
+      </section>
+    </div>
+  </aside>
+</main>
+
+<footer class="transport">
+  <button id="btnPlay" class="primary" style="min-width:92px;justify-content:center">▶ 播放</button>
+  <button id="btnHome" title="回到開頭">⏮ 開頭</button>
+  <span class="time"><span id="tNow">00:00.000</span> <span class="d">/ <span id="tDur">00:00</span></span></span>
+  <span style="display:inline-flex;gap:4px;align-items:center">
+    <button id="revPrev" title="上一個待確認（Shift + N）">◀</button>
+    <span id="revLabel" style="font-size:12.5px;min-width:96px;text-align:center"></span>
+    <button id="revNext" title="下一個待確認（N）">▶</button>
+  </span>
+  <button id="btnBypass" title="暫時關閉閃避，聽原始音檔做比較">聽原始音檔</button>
+  <label class="zoom" for="zoom">縮放 <input type="range" id="zoom" min="0" max="1000" value="0"></label>
+  <div id="status" role="status" aria-live="polite"></div>
+</footer>
+
+<script>
+'use strict';
+/* ====================== 基本設定 ====================== */
+const $ = (s, r = document) => r.querySelector(s);
+const COLORS = ['#ff7a59', '#35c2b0', '#f2c14e', '#a08cff', '#5aa9ff', '#ff6fae'];
+const HOP = 0.02;          // 分析用的音框長度（秒）
+const PEAK_RES = 0.005;    // 波形快取解析度（秒）
+let ROW_H = 92; const RULER_H = 26, MAX_TRACKS = 6;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+const S = {
+  ctx: null, master: null,
+  tracks: [], duration: 0,
+  view: { start: 0, pps: 20 },
+  sel: null,                 // { ti, seg }
+  selTrack: 0,
+  params: { duckDb: -18, fadeMs: 120, preMs: 80, postMs: 220 },
+  an: { dominance: 6, gate: 12, minGapMs: 400, minSegMs: 200, smoothMs: 100 },
+  transcript: [], pending: null,
+  playing: false, pos: 0, playOff: 0, playWhen: 0, playUntil: null,
+  bypass: false, manual: false, demo: false,
+  hist: [], future: [],
+  ai: null, dl: null,
+};
+
+/* ====================== 工具函式 ====================== */
+function pad(n, w = 2) { return String(n).padStart(w, '0'); }
+function fmt(t, ms = true) {
+  if (!isFinite(t)) t = 0;
+  t = Math.max(0, t);
+  const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = Math.floor(t % 60);
+  const f = Math.floor((t % 1) * 1000 + 1e-6);
+  const base = (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s);
+  return ms ? base + '.' + pad(f, 3) : base;
+}
+function parseTime(v) {
+  if (typeof v === 'number') return v;
+  if (v == null) return NaN;
+  let s = String(v).trim().replace(',', '.');
+  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+  const p = s.split(':').map(Number);
+  if (p.length < 2 || p.length > 3 || p.some(x => isNaN(x))) return NaN;
+  return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1];
+}
+function percentile(arr, q, minVal = -90) {
+  const step = Math.max(1, Math.floor(arr.length / 40000));
+  const v = [];
+  for (let i = 0; i < arr.length; i += step) if (arr[i] > minVal) v.push(arr[i]);
+  if (!v.length) return minVal;
+  v.sort((a, b) => a - b);
+  return v[Math.min(v.length - 1, Math.floor(q * v.length))];
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+let statusTimer = 0;
+function status(msg, kind = '', action = null) {
+  const el = $('#status');
+  el.className = kind; el.textContent = msg;
+  if (action) {
+    const b = document.createElement('button'); b.className = 'mini'; b.textContent = action.label;
+    b.onclick = () => { action.fn(); status(''); };
+    el.appendChild(b);
+  }
+  clearTimeout(statusTimer);
+  if (msg && !action && kind !== 'err') statusTimer = setTimeout(() => { if (el.textContent === msg) status(''); }, 7000);
+}
+const tick = () => new Promise(r => setTimeout(r, 0));
+
+/* ====================== 軌道 ====================== */
+let uid = 0;
+function newTrack(name) {
+  const used = new Set(S.tracks.map(t => t.color));
+  const color = COLORS.find(c => !used.has(c)) || COLORS[S.tracks.length % COLORS.length];
+  return { id: ++uid, name: name || `講者 ${S.tracks.length + 1}`, color, fileName: '', fileSize: 0, buffer: null,
+    ch0: null, ch1: null, peaks: null, db: null, norm: null, act: null, disp: 1, segs: [],
+    mute: false, solo: false, src: null, duckNode: null, outNode: null };
+}
+const loaded = () => S.tracks.filter(t => t.buffer);
+const hasAudio = () => S.tracks.some(t => t.buffer);
+
+function ensureCtx(rate) {
+  if (S.ctx) return S.ctx;
+  try { S.ctx = new AudioContext(rate ? { sampleRate: rate } : undefined); }
+  catch (e) { S.ctx = new AudioContext(); }
+  S.master = S.ctx.createGain(); S.master.connect(S.ctx.destination);
+  return S.ctx;
+}
+function sniffWavRate(ab) {
+  try {
+    const dv = new DataView(ab);
+    if (dv.getUint32(0, false) !== 0x52494646) return 0;
+    let p = 12;
+    while (p + 8 <= dv.byteLength) {
+      const id = dv.getUint32(p, false), sz = dv.getUint32(p + 4, true);
+      if (id === 0x666d7420) return dv.getUint32(p + 12, true);
+      p += 8 + sz + (sz & 1);
+    }
+  } catch (e) {}
+  return 0;
+}
+
+function computeFeatures(t) {
+  const b = t.buffer, sr = b.sampleRate, nch = b.numberOfChannels, n = b.length;
+  const hopN = Math.max(1, Math.round(sr * HOP)), pN = Math.max(1, Math.round(sr * PEAK_RES));
+  const frames = Math.ceil(n / hopN);
+  const pow = new Float64Array(frames), pk = new Float32Array(Math.ceil(n / pN));
+  t.ch0 = b.getChannelData(0); t.ch1 = nch > 1 ? b.getChannelData(1) : null;
+  for (let c = 0; c < nch; c++) {
+    const d = b.getChannelData(c);
+    let f = 0, fc = 0, acc = 0, p = 0, pc = 0, m = 0;
+    for (let i = 0; i < n; i++) {
+      const v = d[i];
+      acc += v * v;
+      const a = v < 0 ? -v : v; if (a > m) m = a;
+      if (++fc === hopN) { pow[f++] += acc; acc = 0; fc = 0; }
+      if (++pc === pN) { if (m > pk[p]) pk[p] = m; p++; m = 0; pc = 0; }
+    }
+    if (fc) pow[f] += acc;
+    if (pc && m > pk[p]) pk[p] = m;
+  }
+  const db = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) db[f] = 10 * Math.log10(pow[f] / (hopN * nch) + 1e-12);
+  t.db = db; t.peaks = pk;
+  // 波形金字塔：每層把 4 格合成 1 格，縮小檢視時不必掃描大量資料
+  t.pyr = [pk];
+  while (t.pyr[t.pyr.length - 1].length > 2000) {
+    const a = t.pyr[t.pyr.length - 1], b = new Float32Array(Math.ceil(a.length / 4));
+    for (let i = 0; i < a.length; i++) { const j = i >> 2; if (a[i] > b[j]) b[j] = a[i]; }
+    t.pyr.push(b);
+  }
+}
+
+/* ====================== 自動分析（比較各軌音量） ====================== */
+function computeNorms() {
+  const L = loaded(); if (!L.length) return;
+  const F = Math.ceil(S.duration / HOP) + 1;
+  const w = Math.max(1, Math.round(S.an.smoothMs / 1000 / HOP / 2));
+  // 1) 平滑後的音量（dB）、底噪
+  for (const t of L) {
+    const pre = new Float64Array(F + 1);
+    for (let f = 0; f < F; f++) pre[f + 1] = pre[f] + (f < t.db.length ? Math.pow(10, t.db[f] / 10) : 1e-12);
+    const sm = new Float32Array(F);
+    for (let f = 0; f < F; f++) {
+      const a = Math.max(0, f - w), b = Math.min(F, f + w + 1);
+      sm[f] = 10 * Math.log10((pre[b] - pre[a]) / (b - a) + 1e-12);
+    }
+    t.sm = sm;
+    t.floor = percentile(sm, 0.10, -115);
+    t.ref = percentile(sm, 0.95, -115);
+  }
+  for (const t of S.tracks) if (!t.buffer) { t.norm = null; t.act = null; t.sm = null; }
+  const n = L.length;
+  // 2) 找出「很確定只有某一軌在講話」的音框：用各軌相對音量粗判，且要明顯勝過其他軌
+  const conf = L.map(() => []);
+  for (let f = 0; f < F; f += 2) {
+    let best = -1, bv = -1e9, second = -1e9;
+    for (let i = 0; i < n; i++) {
+      const v = L[i].sm[f] - L[i].ref;
+      if (v > bv) { second = bv; bv = v; best = i; } else if (v > second) second = v;
+    }
+    const t = L[best];
+    if (bv - second >= 6 && t.sm[f] > t.floor + 15) conf[best].push(f);
+  }
+  // 3) 估計串音量：講者 j 說話時，軌道 k 收到的音量比 j 低多少 dB
+  const bleed = L.map(() => new Float32Array(n));
+  const known = [];
+  for (let j = 0; j < n; j++) for (let k = 0; k < n; k++) {
+    if (j === k) continue;
+    const fr = conf[j];
+    if (fr.length < 50) { bleed[j][k] = NaN; continue; }
+    const d = fr.map(f => L[k].sm[f] - L[j].sm[f]).sort((a, b) => a - b);
+    bleed[j][k] = clamp(d[Math.floor(d.length * 0.5)], -60, 20);
+    known.push(bleed[j][k]);
+  }
+  known.sort((a, b) => a - b);
+  const fallback = known.length ? known[Math.floor(known.length / 2)] : -15;
+  for (let j = 0; j < n; j++) for (let k = 0; k < n; k++) if (j !== k && isNaN(bleed[j][k])) bleed[j][k] = fallback;
+  S.bleed = { tracks: L, m: bleed, conf: conf.map(c => c.length * 2 * HOP) };
+  // 4) 每一軌：實際音量 − 預估串音 = 「超出串音的量」
+  const margin = S.an.dominance, gate = S.an.gate;
+  for (let k = 0; k < n; k++) {
+    const t = L[k], ex = new Float32Array(F), act = new Uint8Array(F);
+    for (let f = 0; f < F; f++) {
+      let pred = -1e9;
+      for (let j = 0; j < n; j++) if (j !== k) { const p = L[j].sm[f] + bleed[j][k]; if (p > pred) pred = p; }
+      const v = n > 1 ? t.sm[f] - pred : t.sm[f] - t.floor - 10;
+      ex[f] = v;
+      act[f] = (v > margin && t.sm[f] > t.floor + gate) ? 1 : 0;
+    }
+    t.norm = ex; t.act = act;
+  }
+}
+function closeGaps(segs, gap) {
+  segs.sort((a, b) => a.s - b.s);
+  const out = [];
+  for (const g of segs) {
+    const l = out[out.length - 1];
+    if (l && g.s - l.e < gap) { if (g.e > l.e) l.e = g.e; } else out.push({ s: g.s, e: g.e });
+  }
+  return out;
+}
+function segsFromAct(act) {
+  const out = []; let st = -1;
+  for (let f = 0; f <= act.length; f++) {
+    const on = f < act.length && act[f];
+    if (on && st < 0) st = f;
+    else if (!on && st >= 0) { out.push({ s: st * HOP, e: f * HOP }); st = -1; }
+  }
+  return out;
+}
+function analyze(silent) {
+  if (!hasAudio()) return;
+  const prev = snap();
+  computeNorms();
+  for (const t of S.tracks) {
+    if (!t.act) continue;
+    let segs = segsFromAct(t.act);
+    segs = closeGaps(segs, S.an.minGapMs / 1000);
+    segs = segs.filter(g => g.e - g.s >= S.an.minSegMs / 1000);
+    t.segs = segs;
+    normalizeSegs(t);
+  }
+  S.sel = null; S.manual = false;
+  pushHist(prev);
+  changed();
+  if (!silent) status('已重新分析。', 'ok');
+}
+/* ====================== 待確認清單 ====================== */
+function buildReview() {
+  const out = [], T = S.tracks, margin = S.an.dominance;
+  for (let i = 0; i < T.length; i++) for (let j = i + 1; j < T.length; j++) {
+    const A = T[i].segs, B = T[j].segs; let a = 0, b = 0;
+    while (a < A.length && b < B.length) {
+      const s = Math.max(A[a].s, B[b].s), e = Math.min(A[a].e, B[b].e);
+      if (e - s >= 0.5) out.push({ s, e, kind: 'overlap', tis: [i, j] });
+      if (A[a].e < B[b].e) a++; else b++;
+    }
+  }
+  T.forEach((t, ti) => {
+    if (!t.norm) return;
+    for (const g of t.segs) {
+      const f0 = Math.floor(g.s / HOP), f1 = Math.min(t.norm.length, Math.ceil(g.e / HOP));
+      let sum = 0, n = 0; for (let f = f0; f < f1; f++) { sum += t.norm[f]; n++; }
+      if (n && sum / n < margin + 3) out.push({ s: g.s, e: g.e, kind: 'weak', tis: [ti], seg: g });
+    }
+  });
+  out.sort((x, y) => x.s - y.s);
+  const merged = [];
+  for (const it of out) { const l = merged[merged.length - 1]; if (l && it.s - l.s < 1) continue; merged.push(it); }
+  S.review = merged;
+  renderReviewLabel();
+}
+function renderReviewLabel() {
+  const r = S.review || [], t = curTime();
+  const done = r.filter(x => x.s < t - 0.6).length;
+  $('#revLabel').textContent = r.length ? `待確認 ${Math.min(done + 1, r.length)}/${r.length}` : '沒有待確認';
+  $('#revPrev').disabled = $('#revNext').disabled = !r.length;
+}
+function goReview(dir) {
+  const r = S.review || []; if (!r.length) return;
+  const t = curTime();
+  let it = dir > 0 ? r.find(x => x.s - 0.5 > t + 0.05) : [...r].reverse().find(x => x.s - 0.5 < t - 0.05);
+  if (!it) it = dir > 0 ? r[0] : r[r.length - 1];
+  if (S.playing) pause();
+  S.pos = Math.max(0, it.s - 0.5);
+  const vis = W / S.view.pps;
+  if (vis > 40) { setPps(W / 20, it.s, W * 0.3); }
+  else if (it.s < S.view.start || it.e > S.view.start + vis) { S.view.start = it.s - vis * 0.3; clampView(); }
+  const names = it.tis.map(i => `「${S.tracks[i].name}」`).join('和');
+  if (it.kind === 'weak' && S.tracks[it.tis[0]].segs.includes(it.seg)) { S.sel = { ti: it.tis[0], seg: it.seg }; S.selTrack = it.tis[0]; }
+  else S.sel = null;
+  renderSel(); updateTime(); renderReviewLabel(); requestDraw();
+  status(it.kind === 'overlap'
+    ? `${names}同時在講話？聽一下，多的那軌就刪掉。`
+    : `${names}這段可能是串音，不是就按 Delete。`);
+}
+
+/* ====================== 段落編輯 ====================== */
+function normalizeSegs(t) {
+  const D = S.duration || Infinity;
+  const a = t.segs.map(g => { g.s = Math.max(0, g.s); g.e = Math.min(D, g.e); return g; })
+    .filter(g => g.e - g.s >= 0.02).sort((x, y) => x.s - y.s);
+  const out = [];
+  for (const g of a) {
+    const l = out[out.length - 1];
+    if (l && g.s < l.e - 1e-6) { if (g.e > l.e) l.e = g.e; if (S.sel && S.sel.seg === g) S.sel.seg = l; }
+    else out.push(g);
+  }
+  t.segs = out;
+  if (S.sel && S.tracks[S.sel.ti] === t && !out.includes(S.sel.seg)) S.sel = null;
+}
+function snap() { return S.tracks.map(t => t.segs.map(g => ({ s: g.s, e: g.e }))); }
+function restore(sn) { S.tracks.forEach((t, i) => { t.segs = (sn[i] || []).map(g => ({ s: g.s, e: g.e })); }); S.sel = null; }
+function pushHist(prev) { S.hist.push(prev); if (S.hist.length > 200) S.hist.shift(); S.future = []; }
+function undo() { if (!S.hist.length) return; S.future.push(snap()); restore(S.hist.pop()); S.manual = true; changed(); }
+function redo() { if (!S.future.length) return; S.hist.push(snap()); restore(S.future.pop()); S.manual = true; changed(); }
+
+function changed() {
+  scheduleAll();
+  buildReview();
+  renderSel();
+  renderHeadInfo();
+  $('#btnUndo').disabled = !S.hist.length;
+  $('#btnRedo').disabled = !S.future.length;
+  $('#btnAnalyze').hidden = !S.manual;
+  saveLocalSoon();
+  requestDraw();
+}
+function editSeg(fn) { const prev = snap(); fn(); pushHist(prev); S.manual = true; changed(); }
+function deleteSel() {
+  if (!S.sel) return;
+  const { ti, seg } = S.sel;
+  editSeg(() => { const t = S.tracks[ti]; t.segs = t.segs.filter(g => g !== seg); S.sel = null; });
+}
+function splitAt(p) {
+  let ti = S.sel ? S.sel.ti : S.selTrack;
+  const t = S.tracks[ti]; if (!t) return;
+  const seg = (S.sel && S.sel.seg.s < p && S.sel.seg.e > p) ? S.sel.seg : t.segs.find(g => g.s < p && g.e > p);
+  if (!seg) { status('播放頭不在這一軌的任何段落裡，無法分割。'); return; }
+  editSeg(() => {
+    const b = { s: p, e: seg.e }; seg.e = p;
+    t.segs.push(b); t.segs.sort((x, y) => x.s - y.s);
+    S.sel = { ti, seg: b };
+  });
+  status('已分割。');
+}
+
+/* ====================== 增益包絡 ====================== */
+function intervals(t) {
+  const pre = S.params.preMs / 1000, post = S.params.postMs / 1000, f = Math.max(0.005, S.params.fadeMs / 1000);
+  const iv = [];
+  for (const g of t.segs) {
+    const a = Math.max(0, g.s - pre), b = g.e + post;
+    const l = iv[iv.length - 1];
+    if (l && a - l[1] < 2 * f + 0.003) { if (b > l[1]) l[1] = b; }
+    else iv.push([a, b]);
+  }
+  return iv;
+}
+function makeGainFn(iv, bypass) {
+  if (bypass) return () => 1;
+  const dd = S.params.duckDb, duck = Math.pow(10, dd / 20), f = Math.max(0.005, S.params.fadeMs / 1000);
+  let k = 0, lastT = -Infinity;
+  return function (t) {
+    if (t < lastT) k = 0;
+    lastT = t;
+    while (k < iv.length && iv[k][1] + f <= t) k++;
+    if (k >= iv.length) return duck;
+    const a = iv[k][0], b = iv[k][1];
+    if (t >= a && t <= b) return 1;
+    let x;
+    if (t < a) { if (t <= a - f) return duck; x = (t - (a - f)) / f; }
+    else x = 1 - (t - b) / f;
+    const y = 0.5 - 0.5 * Math.cos(Math.PI * x);
+    return Math.pow(10, dd * (1 - y) / 20);
+  };
+}
+
+/* ====================== 播放 ====================== */
+function curTime() { return S.playing ? S.playOff + Math.max(0, S.ctx.currentTime - S.playWhen) : S.pos; }
+function stopSources() {
+  for (const t of S.tracks) {
+    if (t.src) { try { t.src.stop(); } catch (e) {} try { t.src.disconnect(); t.duckNode.disconnect(); t.outNode.disconnect(); } catch (e) {} }
+    t.src = null; t.duckNode = null; t.outNode = null;
+  }
+}
+function play(from, until) {
+  if (!hasAudio()) { status('請先載入音檔。'); return; }
+  ensureCtx();
+  S.ctx.resume().catch(() => {});
+  if (S.playing) { S.pos = curTime(); }
+  stopSources();
+  let off = from != null ? from : S.pos;
+  if (off >= S.duration - 0.05) off = 0;
+  off = Math.max(0, off);
+  const when = S.ctx.currentTime + 0.06;
+  for (const t of S.tracks) {
+    if (!t.buffer) continue;
+    const src = S.ctx.createBufferSource(); src.buffer = t.buffer;
+    t.duckNode = S.ctx.createGain(); t.outNode = S.ctx.createGain();
+    src.connect(t.duckNode); t.duckNode.connect(t.outNode); t.outNode.connect(S.master);
+    if (off < t.buffer.duration) src.start(when, off);
+    t.src = src;
+  }
+  S.playing = true; S.playOff = off; S.playWhen = when; S.playUntil = until ?? null;
+  applyMix(); scheduleAll(); updatePlayBtn();
+  requestAnimationFrame(loop);
+}
+function pause() { if (!S.playing) return; S.pos = curTime(); stopSources(); S.playing = false; S.playUntil = null; updatePlayBtn(); requestFrame(); }
+function togglePlay() { S.playing ? pause() : play(); }
+function seek(t) {
+  t = clamp(t, 0, S.duration || 0);
+  if (S.playing) play(t); else { S.pos = t; requestFrame(); updateTime(); }
+}
+function updatePlayBtn() { $('#btnPlay').textContent = S.playing ? '❚❚ 暫停' : '▶ 播放'; }
+function applyMix() {
+  const anySolo = S.tracks.some(t => t.solo);
+  for (const t of S.tracks) if (t.outNode) t.outNode.gain.value = (anySolo ? t.solo : !t.mute) ? 1 : 0;
+}
+function scheduleAll() {
+  if (!S.playing || !S.ctx) return;
+  const when = Math.max(S.ctx.currentTime + 0.02, S.playWhen);
+  const off = S.playOff + (when - S.playWhen);
+  for (const t of S.tracks) if (t.duckNode) scheduleGain(t, off, when);
+}
+function scheduleGain(t, off, when) {
+  const p = t.duckNode.gain, now = S.ctx.currentTime;
+  try { p.cancelScheduledValues(0); } catch (e) {}
+  const gf = makeGainFn(intervals(t), S.bypass);
+  p.setValueAtTime(gf(off), Math.max(now, when - 0.01));
+  if (S.bypass) return;
+  const f = Math.max(0.005, S.params.fadeMs / 1000);
+  for (const [a, b] of intervals(t)) {
+    if (b + f <= off) continue;
+    for (const [r0, r1] of [[a - f, a], [b, b + f]]) {
+      if (r1 <= off) continue;
+      const s0 = Math.max(r0, off), dur = r1 - s0;
+      if (dur < 0.003) continue;
+      const N = 24, curve = new Float32Array(N);
+      for (let i = 0; i < N; i++) curve[i] = gf(s0 + dur * i / (N - 1));
+      try { p.setValueCurveAtTime(curve, when + (s0 - off), dur); } catch (e) {}
+    }
+  }
+}
+let lastTrHi = 0;
+function loop() {
+  if (!S.playing) return;
+  const t = curTime();
+  if (t >= S.duration || (S.playUntil != null && t >= S.playUntil)) {
+    S.pos = Math.min(t, S.duration); stopSources(); S.playing = false; S.playUntil = null; updatePlayBtn(); requestFrame(); updateTime(); return;
+  }
+  const vis = W / S.view.pps;
+  if (t > S.view.start + vis * 0.94 || t < S.view.start) { S.view.start = t - vis * 0.08; clampView(); syncZoom(); dirtyAll = true; }
+  updateTime();
+  const now = performance.now();
+  if (now - lastTrHi > 250) { lastTrHi = now; highlightTranscript(t); }
+  draw();
+  requestAnimationFrame(loop);
+}
+function updateTime() { if (S.review) renderReviewLabel(); $('#tNow').textContent = fmt(curTime()); $('#tDur').textContent = fmt(S.duration, false); }
+
+/* ====================== 畫面：時間軸 ====================== */
+// 畫面分兩層：波形與段落畫在離屏圖層（只有內容變動才重畫），播放頭每一格直接疊上去，播放時就不必重算波形
+const cv = $('#cv'), cx0 = cv.getContext('2d');
+const ov = $('#overview'), ox0 = ov.getContext('2d');
+const lay = document.createElement('canvas'), cx = lay.getContext('2d');
+const ovl = document.createElement('canvas'), ox = ovl.getContext('2d');
+let dirtyAll = true; const dirtyRows = new Set();
+let W = 600, H = 300, DPR = 1, OW = 600, drawQueued = false;
+function requestFrame() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(() => { drawQueued = false; draw(); }); } }
+function requestDraw(row) { if (row == null) dirtyAll = true; else dirtyRows.add(row); requestFrame(); }
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  W = Math.max(100, $('#cvwrap').clientWidth);
+  const avail = $('#tl').clientHeight;
+  ROW_H = clamp(Math.floor((avail - RULER_H - 1) / Math.max(1, S.tracks.length)), 92, 170);
+  document.querySelectorAll('#heads .head').forEach(h => { h.style.height = ROW_H + 'px'; });
+  H = RULER_H + S.tracks.length * ROW_H;
+  cv.width = lay.width = Math.round(W * DPR); cv.height = lay.height = Math.round(H * DPR); cv.style.height = H + 'px';
+  OW = Math.max(100, ov.clientWidth); ov.width = ovl.width = Math.round(OW * DPR); ov.height = ovl.height = Math.round(34 * DPR);
+  dirtyAll = true;
+  clampView(); syncZoom(); draw();
+}
+const timeToX = t => (t - S.view.start) * S.view.pps;
+const xToTime = x => S.view.start + x / S.view.pps;
+function minPps() { return W / Math.max(1, S.duration || 60); }
+function clampView() {
+  S.view.pps = clamp(S.view.pps, minPps(), 3000);
+  const vis = W / S.view.pps;
+  S.view.start = clamp(S.view.start, 0, Math.max(0, (S.duration || 0) - vis));
+}
+function setPps(p, anchorT, anchorX) {
+  S.view.pps = clamp(p, minPps(), 3000);
+  S.view.start = anchorT - anchorX / S.view.pps;
+  clampView(); syncZoom(); requestDraw();
+}
+function syncZoom() {
+  const lo = Math.log(minPps()), hi = Math.log(3000);
+  $('#zoom').value = Math.round((Math.log(S.view.pps) - lo) / (hi - lo) * 1000);
+}
+function niceStep(pps) {
+  const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
+  return steps.find(s => s * pps >= 80) || 3600;
+}
+function draw() {
+  if (dirtyAll || dirtyRows.size) {
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    if (dirtyAll) { cx.clearRect(0, 0, W, H); drawRuler(); S.tracks.forEach((t, i) => drawTrack(t, i, RULER_H + i * ROW_H)); }
+    else for (const i of dirtyRows) if (S.tracks[i]) drawTrack(S.tracks[i], i, RULER_H + i * ROW_H);
+    drawOverview();
+    dirtyAll = false; dirtyRows.clear();
+  }
+  cx0.setTransform(1, 0, 0, 1, 0, 0); cx0.clearRect(0, 0, cv.width, cv.height); cx0.drawImage(lay, 0, 0);
+  ox0.setTransform(1, 0, 0, 1, 0, 0); ox0.drawImage(ovl, 0, 0);
+  if (!S.duration) return;
+  cx0.setTransform(DPR, 0, 0, DPR, 0, 0); ox0.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const x = timeToX(curTime());
+  if (x >= -2 && x <= W + 2) {
+    cx0.fillStyle = '#f0a24b'; cx0.fillRect(Math.round(x) - 0.5, 0, 1.5, H);
+    cx0.beginPath(); cx0.moveTo(x - 6, 0); cx0.lineTo(x + 6, 0); cx0.lineTo(x, 8); cx0.closePath(); cx0.fill();
+  }
+  const k = OW / S.duration, vx = S.view.start * k, vw = (W / S.view.pps) * k;
+  ox0.fillStyle = 'rgba(255,255,255,0.07)'; ox0.fillRect(vx, 0, vw, 34);
+  ox0.strokeStyle = 'rgba(255,255,255,0.55)'; ox0.lineWidth = 1; ox0.strokeRect(vx + 0.5, 0.5, Math.max(2, vw - 1), 33);
+  ox0.fillStyle = '#f0a24b'; ox0.fillRect(curTime() * k, 0, 1.5, 34);
+}
+function drawRuler() {
+  cx.fillStyle = '#171b21'; cx.fillRect(0, 0, W, RULER_H);
+  cx.fillStyle = '#2a303a'; cx.fillRect(0, RULER_H - 1, W, 1);
+  if (!S.duration) return;
+  const step = niceStep(S.view.pps), v0 = S.view.start, v1 = xToTime(W);
+  cx.font = '11px "JetBrains Mono", monospace'; cx.textBaseline = 'middle';
+  const sub = step / 5;
+  for (let q = Math.floor(v0 / sub); q * sub <= v1; q++) {
+    const t = Math.round(q * sub * 1000) / 1000;
+    const x = Math.round(timeToX(t)) + 0.5;
+    const major = q % 5 === 0;
+    cx.fillStyle = major ? '#5b6472' : '#353c47';
+    cx.fillRect(x, major ? RULER_H - 10 : RULER_H - 5, 1, major ? 9 : 4);
+    if (major) { cx.fillStyle = '#9aa3b1'; cx.fillText(fmt(t, step < 1), x + 4, 10); }
+  }
+  cx.fillStyle = '#f0a24b';
+  for (const it of S.review || []) {
+    if (it.s < v0 - 1 || it.s > v1) continue;
+    const x = timeToX(it.s);
+    cx.beginPath(); cx.moveTo(x - 5, RULER_H - 9); cx.lineTo(x + 5, RULER_H - 9); cx.lineTo(x, RULER_H - 2); cx.closePath(); cx.fill();
+  }
+}
+function columnPeak(t, ta, tb) {
+  if (S.view.pps <= 1 / PEAK_RES) {
+    let lv = 0; while (lv + 1 < t.pyr.length && PEAK_RES * Math.pow(4, lv + 1) <= tb - ta) lv++;
+    const res = PEAK_RES * Math.pow(4, lv);
+    const pk = t.pyr[lv], i0 = Math.max(0, Math.floor(ta / res)), i1 = Math.min(pk.length, Math.max(i0 + 1, Math.floor(tb / res)));
+    let m = 0; for (let i = i0; i < i1; i++) if (pk[i] > m) m = pk[i];
+    return m;
+  }
+  const sr = t.buffer.sampleRate, d = t.ch0, d1 = t.ch1;
+  const i0 = Math.max(0, Math.floor(ta * sr)), i1 = Math.min(d.length, Math.max(i0 + 1, Math.ceil(tb * sr)));
+  let m = 0;
+  for (let i = i0; i < i1; i++) { const v = Math.abs(d[i]); if (v > m) m = v; if (d1) { const w = Math.abs(d1[i]); if (w > m) m = w; } }
+  return m;
+}
+function drawTrack(t, i, y0) {
+  const h = ROW_H;
+  cx.fillStyle = i % 2 ? '#15191f' : '#13161b'; cx.fillRect(0, y0, W, h);
+  cx.fillStyle = '#232932'; cx.fillRect(0, y0 + h - 1, W, 1);
+  if (!t.buffer) {
+    cx.fillStyle = '#6f7886'; cx.font = '13px "Noto Sans TC", sans-serif'; cx.textBaseline = 'middle';
+    cx.fillText('把音檔拖到這一列，或按左側「選擇音檔」', 16, y0 + h / 2);
+  }
+  const v0 = S.view.start, v1 = xToTime(W);
+  // 段落底色
+  for (const g of t.segs) {
+    if (g.e < v0 || g.s > v1) continue;
+    const x0 = timeToX(g.s), x1 = timeToX(g.e);
+    cx.globalAlpha = 0.17; cx.fillStyle = t.color; cx.fillRect(x0, y0 + 3, x1 - x0, h - 7);
+    cx.globalAlpha = 1; cx.fillRect(x0, y0 + 3, Math.max(1, x1 - x0), 3);
+  }
+  // 波形：灰色是原始，彩色是閃避後
+  if (t.buffer && S.duration) {
+    const mid = y0 + h / 2 + 1, amp = h / 2 - 9;
+    const gf = makeGainFn(intervals(t), S.bypass);
+    const toA = v => v <= 0 ? 0 : clamp((20 * Math.log10(v) + 54) / 54, 0, 1) * amp;
+    const dt = 1 / S.view.pps;
+    const xEnd = Math.min(W, timeToX(t.buffer.duration));
+    for (let x = Math.max(0, Math.floor(timeToX(0))); x < xEnd; x++) {
+      const ta = v0 + x * dt;
+      const pk = columnPeak(t, ta, ta + dt);
+      if (pk <= 0) continue;
+      const a0 = toA(pk);
+      const v = pk * gf(ta + dt / 2);
+      const a1 = toA(v);
+      cx.fillStyle = 'rgba(160,170,185,0.22)'; cx.fillRect(x, mid - a0, 1, Math.max(1, a0 * 2));
+      cx.fillStyle = t.color; cx.fillRect(x, mid - a1, 1, Math.max(1, a1 * 2));
+    }
+  }
+  // 選取框
+  if (S.sel && S.tracks[S.sel.ti] === t) {
+    const g = S.sel.seg, x0 = timeToX(g.s), x1 = timeToX(g.e);
+    cx.strokeStyle = '#ffffff'; cx.lineWidth = 1.5; cx.strokeRect(x0 + 0.5, y0 + 3.5, x1 - x0 - 1, h - 8);
+    cx.fillStyle = '#ffffff';
+    cx.fillRect(x0 - 1, y0 + h / 2 - 12, 3, 24); cx.fillRect(x1 - 2, y0 + h / 2 - 12, 3, 24);
+  }
+}
+function drawOverview() {
+  ox.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ox.fillStyle = '#101318'; ox.fillRect(0, 0, OW, 34);
+  if (!S.duration) return;
+  const n = S.tracks.length, lh = Math.max(2, (34 - 6) / Math.max(1, n));
+  const k = OW / S.duration;
+  S.tracks.forEach((t, i) => {
+    ox.fillStyle = t.color; ox.globalAlpha = 0.85;
+    for (const g of t.segs) ox.fillRect(g.s * k, 3 + i * lh, Math.max(1, (g.e - g.s) * k), lh - 1);
+  });
+  ox.globalAlpha = 1;
+  ox.fillStyle = '#ffffff';
+  for (const it of S.review || []) ox.fillRect(it.s * k, 0, 1, 3);
+}
+
+/* ====================== 滑鼠操作 ====================== */
+let drag = null;
+function localXY(e) { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+function hitTest(t, x) {
+  let best = null;
+  for (const g of t.segs) {
+    const x0 = timeToX(g.s), x1 = timeToX(g.e);
+    if (x < x0 - 7 || x > x1 + 7) continue;
+    const d0 = Math.abs(x - x0), d1 = Math.abs(x - x1);
+    if (d0 <= 7 || d1 <= 7) {
+      const edge = d0 <= d1 ? 'start' : 'end';
+      const d = Math.min(d0, d1);
+      if (!best || best.mode === 'move' || d < best.d) best = { seg: g, mode: edge, d };
+    } else if (x >= x0 && x <= x1 && !best) best = { seg: g, mode: 'move', d: 99 };
+  }
+  return best;
+}
+cv.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  const { x, y } = localXY(e);
+  const t = xToTime(x);
+  cv.setPointerCapture(e.pointerId);
+  if (y < RULER_H) { drag = { mode: 'seek' }; seek(t); return; }
+  const ti = Math.floor((y - RULER_H) / ROW_H);
+  const tr = S.tracks[ti]; if (!tr) return;
+  S.selTrack = ti;
+  const hit = hitTest(tr, x);
+  if (hit) {
+    S.sel = { ti, seg: hit.seg };
+    drag = { mode: hit.mode, ti, seg: hit.seg, t0: t, x0: x, orig: { s: hit.seg.s, e: hit.seg.e }, prev: snap(), moved: false };
+    renderSel();
+  } else {
+    drag = { mode: 'create', ti, t0: t, x0: x, prev: snap(), moved: false, seg: null };
+  }
+  requestDraw();
+});
+cv.addEventListener('pointermove', e => {
+  const { x, y } = localXY(e);
+  if (!drag) {
+    let cur = 'default';
+    if (y < RULER_H) cur = 'text';
+    else {
+      const tr = S.tracks[Math.floor((y - RULER_H) / ROW_H)];
+      const hit = tr && hitTest(tr, x);
+      cur = hit ? (hit.mode === 'move' ? 'grab' : 'ew-resize') : 'crosshair';
+    }
+    cv.style.cursor = cur; return;
+  }
+  const t = clamp(xToTime(x), 0, S.duration);
+  if (drag.mode === 'seek') { seek(t); return; }
+  if (!drag.moved && Math.abs(x - drag.x0) < 4) return;
+  drag.moved = true;
+  const g = drag.seg;
+  if (drag.mode === 'start') g.s = Math.min(t, g.e - 0.05);
+  else if (drag.mode === 'end') g.e = Math.max(t, g.s + 0.05);
+  else if (drag.mode === 'move') {
+    const len = drag.orig.e - drag.orig.s;
+    const s = clamp(drag.orig.s + (t - drag.t0), 0, Math.max(0, S.duration - len));
+    g.s = s; g.e = s + len; cv.style.cursor = 'grabbing';
+  } else if (drag.mode === 'create') {
+    if (!drag.seg) { drag.seg = { s: t, e: t }; S.tracks[drag.ti].segs.push(drag.seg); S.sel = { ti: drag.ti, seg: drag.seg }; }
+    drag.seg.s = Math.min(drag.t0, t); drag.seg.e = Math.max(drag.t0, t);
+  }
+  renderSel(); requestDraw(drag.ti);
+});
+function endDrag(e) {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.mode === 'seek') return;
+  const tr = S.tracks[d.ti];
+  if (!d.moved) {
+    if (d.mode === 'create') { S.sel = null; renderSel(); }
+    seek(d.t0);
+    return;
+  }
+  normalizeSegs(tr);
+  pushHist(d.prev); S.manual = true; changed();
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('wheel', e => {
+  if (!S.duration) return;
+  e.preventDefault();
+  const { x } = localXY(e);
+  if (e.ctrlKey || e.metaKey || e.altKey) {
+    setPps(S.view.pps * Math.exp(-e.deltaY * 0.0018), xToTime(x), x);
+  } else {
+    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    S.view.start += d / S.view.pps; clampView(); requestDraw();
+  }
+}, { passive: false });
+cv.addEventListener('dragover', e => { e.preventDefault(); });
+cv.addEventListener('drop', e => {
+  e.preventDefault();
+  const files = [...(e.dataTransfer?.files || [])].filter(f => /^audio\/|\.(wav|mp3|m4a|aac|flac|ogg|aiff?)$/i.test(f.type + ' ' + f.name));
+  if (!files.length) return;
+  const { y } = localXY(e);
+  const ti = clamp(Math.floor((y - RULER_H) / ROW_H), 0, S.tracks.length - 1);
+  loadFilesFrom(ti, files);
+});
+let ovDrag = false;
+function ovSeek(e) {
+  const r = ov.getBoundingClientRect();
+  const t = (e.clientX - r.left) / OW * S.duration;
+  S.view.start = t - (W / S.view.pps) / 2; clampView(); requestDraw();
+}
+ov.addEventListener('pointerdown', e => { if (!S.duration) return; ovDrag = true; ov.setPointerCapture(e.pointerId); ovSeek(e); });
+ov.addEventListener('pointermove', e => { if (ovDrag) ovSeek(e); });
+ov.addEventListener('pointerup', () => { ovDrag = false; });
+
+/* ====================== 鍵盤 ====================== */
+document.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'summary') return;
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (tag === 'button' && e.key === ' ') e.target.blur();
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (mod) return;
+  switch (e.key) {
+    case ' ': e.preventDefault(); togglePlay(); break;
+    case 'Delete': case 'Backspace': if (S.sel) { e.preventDefault(); deleteSel(); } break;
+    case 's': case 'S': splitAt(curTime()); break;
+    case 'i': case 'I': if (S.sel) { const p = curTime(); if (p < S.sel.seg.e - 0.05) editSeg(() => { S.sel.seg.s = p; normalizeSegs(S.tracks[S.sel.ti]); }); } break;
+    case 'o': case 'O': if (S.sel) { const p = curTime(); if (p > S.sel.seg.s + 0.05) editSeg(() => { S.sel.seg.e = p; normalizeSegs(S.tracks[S.sel.ti]); }); } break;
+    case 'ArrowLeft': e.preventDefault(); seek(curTime() - (e.shiftKey ? 5 : 1)); break;
+    case 'ArrowRight': e.preventDefault(); seek(curTime() + (e.shiftKey ? 5 : 1)); break;
+    case 'Home': seek(0); break;
+    case 'n': case 'N': goReview(e.shiftKey ? -1 : 1); break;
+    case 'Escape': S.sel = null; renderSel(); requestDraw(); break;
+    case '=': case '+': setPps(S.view.pps * 1.5, curTime(), timeToX(curTime())); break;
+    case '-': setPps(S.view.pps / 1.5, curTime(), timeToX(curTime())); break;
+  }
+});
+
+/* ====================== 左側軌道標頭 ====================== */
+function renderHeads() {
+  const box = $('#heads'); box.innerHTML = '';
+  const rs = document.createElement('div'); rs.className = 'rs';
+  rs.innerHTML = '<span>軌道</span>';
+  const add = document.createElement('button'); add.className = 'mini'; add.textContent = '＋ 新增軌道';
+  add.disabled = S.tracks.length >= MAX_TRACKS;
+  add.onclick = () => { S.tracks.push(newTrack()); S.hist = []; S.future = []; renderHeads(); resize(); changed(); };
+  rs.appendChild(add); box.appendChild(rs);
+  S.tracks.forEach((t, i) => {
+    const h = document.createElement('div'); h.className = 'head'; h.dataset.i = i;
+    h.innerHTML = `
+      <div class="row"><span class="dot" style="background:${t.color}"></span>
+        <input class="name" id="tname${t.id}" value="${escapeHtml(t.name)}" aria-label="軌道名稱">
+        <button class="x" title="移除這一軌" aria-label="移除這一軌">✕</button></div>
+      <div class="row"><button class="mini pick">選擇音檔</button>
+        <button class="mini m ${t.mute ? 'on' : ''}" title="靜音這一軌">M</button>
+        <button class="mini so ${t.solo ? 'on' : ''}" title="只聽這一軌">S</button></div>
+      <div class="file" data-info></div>
+      <input type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.aif,.aiff" hidden>`;
+    const inp = h.querySelector('input.name');
+    inp.oninput = () => { t.name = inp.value; renderSel(); saveLocalSoon(); };
+    inp.onchange = () => { renderTranscriptList(); if (S.pending) renderMapping(); };
+    const fi = h.querySelector('input[type=file]');
+    h.querySelector('.pick').onclick = () => fi.click();
+    fi.onchange = () => { if (fi.files[0]) loadFilesFrom(i, [fi.files[0]]); fi.value = ''; };
+    h.querySelector('.m').onclick = () => { t.mute = !t.mute; applyMix(); renderHeads(); };
+    h.querySelector('.so').onclick = () => { t.solo = !t.solo; applyMix(); renderHeads(); };
+    const x = h.querySelector('.x'); x.disabled = S.tracks.length <= 1;
+    x.onclick = () => {
+      if (S.playing) pause();
+      S.tracks.splice(i, 1); S.sel = null; S.hist = []; S.future = [];
+      updateDuration(); renderHeads(); resize(); changed();
+    };
+    h.addEventListener('dragover', e => { e.preventDefault(); h.classList.add('drop'); });
+    h.addEventListener('dragleave', () => h.classList.remove('drop'));
+    h.addEventListener('drop', e => {
+      e.preventDefault(); h.classList.remove('drop');
+      const f = [...(e.dataTransfer?.files || [])]; if (f.length) loadFilesFrom(i, f);
+    });
+    box.appendChild(h);
+  });
+  renderHeadInfo();
+}
+function renderHeadInfo() {
+  const heads = document.querySelectorAll('#heads .head');
+  S.tracks.forEach((t, i) => {
+    const el = heads[i]?.querySelector('[data-info]'); if (!el) return;
+    if (!t.buffer) { el.textContent = '尚未載入音檔'; el.title = ''; return; }
+    const tot = t.segs.reduce((a, g) => a + g.e - g.s, 0);
+    const pct = S.duration ? Math.round(tot / S.duration * 100) : 0;
+    el.textContent = `${t.segs.length} 段 · 講話 ${pct}% · ${t.fileName}`;
+    el.title = t.fileName;
+  });
+}
+
+/* ====================== 載入音檔 ====================== */
+function updateDuration() {
+  S.duration = Math.max(0, ...S.tracks.map(t => t.buffer ? t.buffer.duration : 0));
+  updateTime();
+  if (typeof updatePreview === 'function' && $('#exPreview')) updatePreview();
+}
+function clearDemo() {
+  if (!S.demo) return;
+  pause();
+  S.demo = false;
+  S.tracks = [newTrackReset(0), newTrackReset(1), newTrackReset(2)];
+  S.transcript = []; S.pending = null; S.sel = null; S.hist = []; S.future = []; S.pos = 0;
+  $('#trText').value = ''; $('#mapBox').hidden = true; renderTranscriptList();
+  $('#demoBanner').hidden = true;
+  updateDuration();
+}
+function newTrackReset(i) { const t = newTrack(`講者 ${i + 1}`); t.color = COLORS[i]; return t; }
+
+async function decodeFile(file) {
+  const ab = await file.arrayBuffer();
+  const want = sniffWavRate(ab) || 48000;
+  if (S.ctx && S.ctx.sampleRate !== want && !loaded().length) { try { S.ctx.close(); } catch (e) {} S.ctx = null; }
+  ensureCtx(want);
+  return await S.ctx.decodeAudioData(ab);
+}
+async function loadFilesFrom(startIdx, files) {
+  if (!files.length) return;
+  const wasDemo = S.demo;
+  clearDemo();
+  if (wasDemo) startIdx = 0;
+  files = [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  let ok = 0;
+  for (let k = 0; k < files.length; k++) {
+    const idx = startIdx + k;
+    if (idx >= MAX_TRACKS) { status(`最多 ${MAX_TRACKS} 軌，其餘檔案未載入。`, 'err'); break; }
+    while (S.tracks.length <= idx) S.tracks.push(newTrack());
+    const t = S.tracks[idx], f = files[k];
+    status(`正在讀取「${f.name}」（${k + 1}/${files.length}）…長檔案可能要數十秒。`);
+    renderHeads(); resize();
+    await tick();
+    try {
+      const buf = await decodeFile(f);
+      t.buffer = buf; t.fileName = f.name; t.fileSize = f.size;
+      if (/^講者 \d+$/.test(t.name)) t.name = f.name.replace(/\.[^.]+$/, '').slice(0, 30);
+      computeFeatures(t);
+      ok++;
+    } catch (err) {
+      status(`無法讀取「${f.name}」。瀏覽器可能不支援這個格式，請轉成 WAV 或 MP3 再試。`, 'err');
+      return;
+    }
+  }
+  updateDuration(); renderHeads(); resize();
+  if (!ok) return;
+  S.view.start = 0; S.view.pps = minPps(); clampView(); syncZoom();
+  const lens = loaded().map(t => t.buffer.duration);
+  const diff = Math.max(...lens) - Math.min(...lens);
+  analyze(true);
+  let msg = `已載入 ${ok} 個檔案並自動判斷講者。`;
+  if (loaded().length > 1 && diff > 1) msg += `注意：各軌長度相差 ${diff.toFixed(1)} 秒，請確認三軌是同時開始錄的。`;
+  const saved = loadLocal();
+  if (saved) status(msg + ' 找到這組檔案上次的編輯紀錄。', diff > 1 ? 'err' : 'ok', { label: '還原上次編輯', fn: () => applyProject(saved) });
+  else status(msg, diff > 1 ? 'err' : 'ok');
+}
+
+/* ====================== 逐字稿 ====================== */
+function splitSpeaker(txt) {
+  txt = (txt || '').trim(); let m;
+  if ((m = txt.match(/^<v\s+([^>]+)>\s*/))) return [m[1].trim(), txt.slice(m[0].length).replace(/<\/v>/g, '')];
+  if ((m = txt.match(/^[\[【(（]([^\]】)）]{1,30})[\]】)）]\s*[:：]?\s*/)) && !/^[\d:.,\s]+$/.test(m[1])) return [m[1].trim(), txt.slice(m[0].length)];
+  if ((m = txt.match(/^([^:：\s][^:：]{0,24}?)\s*[:：]\s*/)) && !/^[\d\s]+$/.test(m[1])) return [m[1].trim(), txt.slice(m[0].length)];
+  return [null, txt];
+}
+function finishItems(out) {
+  out = out.filter(o => isFinite(o.start)).sort((a, b) => a.start - b.start);
+  if (out.some(o => o.speaker)) { let last = null; for (const o of out) { if (o.speaker) last = o.speaker; else o.speaker = last; } }
+  for (let i = 0; i < out.length; i++) {
+    const o = out[i], nx = out[i + 1];
+    if (!isFinite(o.end) || o.end <= o.start) o.end = nx && nx.start > o.start ? nx.start : o.start + 6;
+    if (S.duration) o.end = Math.min(o.end, S.duration);
+    o.text = (o.text || '').trim();
+    o.speaker = o.speaker == null ? null : String(o.speaker).trim() || null;
+  }
+  return out;
+}
+function fromJSON(o) {
+  let arr = Array.isArray(o) ? o : (o.utterances || o.segments || o.monologues || o.items || o.data || o.results?.utterances || o.results || []);
+  if (!Array.isArray(arr)) return [];
+  let out = arr.map(it => {
+    const st = it.start ?? it.start_time ?? it.startTime ?? it.begin ?? it.from ?? it.offset;
+    const en = it.end ?? it.end_time ?? it.endTime ?? it.to;
+    let sp = it.speaker ?? it.speaker_label ?? it.speakerName ?? it.speaker_name ?? it.spk ?? it.name ?? null;
+    if (typeof sp === 'number') sp = '講者 ' + sp;
+    let text = it.text ?? it.transcript ?? (Array.isArray(it.elements) ? it.elements.map(e => e.value).join('') : '');
+    let s = parseTime(st), e = parseTime(en);
+    if (sp == null && typeof text === 'string') { const [a, b] = splitSpeaker(text); if (a) { sp = a; text = b; } }
+    return { start: s, end: e, speaker: sp, text: String(text || '') };
+  });
+  const maxEnd = Math.max(0, ...out.map(x => isFinite(x.end) ? x.end : x.start || 0));
+  if (maxEnd > 6 * 3600 || (S.duration && maxEnd > S.duration * 20)) out.forEach(x => { x.start /= 1000; x.end /= 1000; });
+  return finishItems(out);
+}
+function fromSRT(text) {
+  const out = [];
+  for (const b of text.split(/\n\s*\n/)) {
+    const lines = b.split('\n');
+    const idx = lines.findIndex(l => l.includes('-->'));
+    if (idx < 0) continue;
+    const m = lines[idx].match(/([\d:.,]+)\s*-->\s*([\d:.,]+)/);
+    if (!m) continue;
+    const body = lines.slice(idx + 1).join(' ').trim();
+    const [sp, tx] = splitSpeaker(body);
+    out.push({ start: parseTime(m[1]), end: parseTime(m[2]), speaker: sp, text: tx.replace(/<[^>]+>/g, '') });
+  }
+  return finishItems(out);
+}
+function fromLines(text) {
+  const TS = '(\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d{1,3})?)';
+  const reRange = new RegExp('^\\s*[\\[(（]?' + TS + '\\s*[-–~～]\\s*' + TS + '[\\])）]?\\s*(?:[-–—|]\\s*)?(.*)$');
+  const reFirst = new RegExp('^\\s*[\\[(（]?' + TS + '[\\])）]?\\s*(?:[-–—|]\\s*)?(.*)$');
+  const reLast = new RegExp('^(.{1,40}?)\\s*[\\[(（]?' + TS + '[\\])）]?\\s*$');
+  const out = []; let cur = null;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim(); if (!line) continue;
+    let m;
+    if ((m = line.match(reRange))) {
+      const [sp, tx] = splitSpeaker(m[3]);
+      cur = { start: parseTime(m[1]), end: parseTime(m[2]), speaker: sp, text: tx }; out.push(cur);
+    } else if ((m = line.match(reFirst))) {
+      const [sp, tx] = splitSpeaker(m[2]);
+      cur = { start: parseTime(m[1]), end: NaN, speaker: sp, text: tx }; out.push(cur);
+      if (!sp && tx && tx.length <= 16 && !/[，。,.!?！？、]/.test(tx)) cur.maybe = tx;
+    } else if ((m = line.match(reLast)) && !/\d{1,2}:\d{2}/.test(m[1])) {
+      cur = { start: parseTime(m[2]), end: NaN, speaker: m[1].replace(/[:：\-–—|]\s*$/, '').trim() || null, text: '' }; out.push(cur);
+    } else if (cur) {
+      if (cur.maybe) { cur.speaker = cur.maybe; cur.text = ''; cur.maybe = null; }
+      cur.text = (cur.text ? cur.text + ' ' : '') + line;
+    }
+  }
+  out.forEach(o => delete o.maybe);
+  return finishItems(out);
+}
+function parseSpeakerRanges(text) {
+  text = text.normalize('NFKC');
+  const TS = '(\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d{1,3})?)';
+  const reRange = new RegExp('^\\s*[\\[(]?\\s*' + TS + '\\s*(?:-->|[-~到至]+)\\s*' + TS + '\\s*[\\])]?\\s*[:|,]?\\s*(.*)$');
+  const reLegend = /^\s*([A-Za-z])\s*(?:是|為|=|:|-|→)\s*(.+?)\s*$/;
+  const legend = {}, items = [];
+  let ranges = 0, withSp = 0;
+  for (const raw of text.replace(/\r/g, '').split('\n')) {
+    const line = raw.trim(); if (!line) continue;
+    let m = line.match(reRange);
+    if (m) {
+      ranges++;
+      const rest = m[3].replace(/[*`]/g, '');
+      let sp = null, mm = rest.match(/(?:^|[^A-Za-z])([A-Za-z])(?=[^A-Za-z]|$)/);
+      if (mm) sp = mm[1].toUpperCase();
+      else { for (const [k, v] of Object.entries(legend)) if (rest.includes(v)) { sp = k; break; } }
+      if (!sp) { const c = rest.replace(/^是\s*/, '').replace(/\s*(發言|說話|講話|在講)\s*$/, '').trim(); if (c && c.length <= 12) sp = c; }
+      if (sp) withSp++;
+      items.push({ start: parseTime(m[1]), end: parseTime(m[2]), speaker: sp, text: '' });
+      continue;
+    }
+    m = line.replace(/[*`]/g, '').match(reLegend);
+    if (m && !/\d{1,2}:\d{2}/.test(line)) legend[m[1].toUpperCase()] = m[2].replace(/[，,。]$/, '');
+  }
+  if (!ranges || withSp / ranges < 0.6) return null;
+  S.legend = legend;
+  items.forEach(o => { if (o.speaker && legend[o.speaker]) o.text = legend[o.speaker] + ' 發言'; });
+  return finishItems(items);
+}
+function parseTranscript(text) {
+  text = (text || '').replace(/\r/g, '').replace(/^﻿/, '').trim();
+  S.legend = {};
+  if (!text) return [];
+  if (/^[\[{]/.test(text)) { try { return fromJSON(JSON.parse(text)); } catch (e) {} }
+  const r = parseSpeakerRanges(text);
+  if (r) return r;
+  if (/-->/.test(text)) return fromSRT(text);
+  return fromLines(text);
+}
+
+function meanNorm(t, items) {
+  if (!t.norm) return -99;
+  let sum = 0, n = 0;
+  const step = Math.max(1, Math.floor(items.length / 300));
+  for (let k = 0; k < items.length; k += step) {
+    const it = items[k];
+    const f0 = Math.max(0, Math.floor(it.start / HOP)), f1 = Math.min(t.norm.length, Math.ceil(it.end / HOP));
+    for (let f = f0; f < f1; f += 2) { sum += t.norm[f]; n++; }
+  }
+  return n ? sum / n : -99;
+}
+function loudestTrack(s, e) {
+  let best = -1, bv = -1e9;
+  S.tracks.forEach((t, i) => { const v = meanNorm(t, [{ start: s, end: e }]); if (t.norm && v > bv) { bv = v; best = i; } });
+  return best;
+}
+function guessMapping(items) {
+  const speakers = [...new Set(items.map(o => o.speaker ?? '__none'))];
+  const map = {};
+  const named = new Set();
+  for (const sp of speakers) {
+    const nm = (S.legend && S.legend[sp]) || sp;
+    const ti = S.tracks.findIndex(t => t.name.trim() === sp || t.name.trim() === nm);
+    if (ti >= 0) { map[sp] = ti; named.add(ti); }
+  }
+  if (!computeReady()) { for (const sp of speakers) if (!(sp in map)) map[sp] = sp === '__none' ? 'auto' : 'auto'; return map; }
+  // 依「該講者說話時哪一軌最大聲」做貪婪配對
+  const pairs = [];
+  for (const sp of speakers) {
+    if (sp in map || sp === '__none') continue;
+    const its = items.filter(o => (o.speaker ?? '__none') === sp);
+    S.tracks.forEach((t, i) => { if (t.norm && !named.has(i)) pairs.push({ sp, i, v: meanNorm(t, its) }); });
+  }
+  pairs.sort((a, b) => b.v - a.v);
+  const usedT = new Set(named);
+  for (const p of pairs) { if (p.sp in map || usedT.has(p.i)) continue; map[p.sp] = p.i; usedT.add(p.i); }
+  for (const sp of speakers) if (!(sp in map)) map[sp] = 'auto';
+  return map;
+}
+function computeReady() { return S.tracks.some(t => t.norm); }
+
+function renderMapping() {
+  const items = S.pending; if (!items) return;
+  const box = $('#mapRows'); box.innerHTML = '';
+  const speakers = [...new Set(items.map(o => o.speaker ?? '__none'))];
+  S.pendingMap = S.pendingMap || guessMapping(items);
+  speakers.forEach((sp, k) => {
+    const cnt = items.filter(o => (o.speaker ?? '__none') === sp).length;
+    const row = document.createElement('div'); row.className = 'maprow';
+    const id = 'map' + k;
+    const lg = S.legend && S.legend[sp] ? `（${escapeHtml(S.legend[sp])}）` : '';
+    row.innerHTML = `<label for="${id}">${sp === '__none' ? '（未標示講者）' : escapeHtml(sp) + lg} <span class="hint">· ${cnt} 段</span></label>`;
+    const sel = document.createElement('select'); sel.id = id;
+    S.tracks.forEach((t, i) => { const o = new Option(`→ ${t.name}`, String(i)); sel.add(o); });
+    sel.add(new Option('依音量自動判斷', 'auto'));
+    sel.add(new Option('忽略', 'skip'));
+    sel.value = String(S.pendingMap[sp] ?? 'auto');
+    sel.onchange = () => { S.pendingMap[sp] = sel.value === 'auto' || sel.value === 'skip' ? sel.value : Number(sel.value); applyTranscript(true); };
+    row.appendChild(sel); box.appendChild(row);
+  });
+  $('#mapBox').hidden = false;
+}
+function refineSpan(ti, s, e) {
+  const t = S.tracks[ti]; if (!t || !t.act) return [s, e];
+  const f0 = Math.max(0, Math.floor((s - 0.3) / HOP)), f1 = Math.min(t.act.length - 1, Math.ceil((e + 0.3) / HOP));
+  let a = -1, b = -1;
+  for (let f = f0; f <= f1; f++) if (t.act[f]) { if (a < 0) a = f; b = f; }
+  if (a < 0) return [s, e];
+  return [a * HOP, (b + 1) * HOP];
+}
+function applyTranscript(quiet) {
+  const items = S.pending; if (!items) return;
+  const map = S.pendingMap || {};
+  const refine = true, replace = true;
+  editSeg(() => {
+    const add = S.tracks.map(() => []);
+    for (const it of items) {
+      let ti = map[it.speaker ?? '__none'];
+      if (ti === 'skip') { it.track = -1; continue; }
+      if (ti === 'auto' || ti == null) ti = loudestTrack(it.start, it.end);
+      it.track = ti;
+      if (ti < 0 || !S.tracks[ti]) continue;
+      let [s, e] = refine ? refineSpan(ti, it.start, it.end) : [it.start, it.end];
+      if (e - s >= 0.05) add[ti].push({ s, e });
+    }
+    S.tracks.forEach((t, i) => {
+      const merged = closeGaps(add[i], S.an.minGapMs / 1000);
+      t.segs = replace ? merged : t.segs.concat(merged);
+      normalizeSegs(t);
+    });
+    S.sel = null;
+  });
+  S.transcript = items;
+  renderTranscriptList();
+  if (!quiet) status('已套用。', 'ok');
+}
+function renderTranscriptList() {
+  const box = $('#tlist'); box.innerHTML = '';
+  const items = S.transcript.length ? S.transcript : (S.pending || []);
+  $('#tlistBox').hidden = !items.length;
+  $('#trCount').textContent = items.length ? `· ${items.length}` : '';
+  const frag = document.createDocumentFragment();
+  items.forEach((it, k) => {
+    const t = S.tracks[it.track];
+    const d = document.createElement('div'); d.className = 'tline'; d.dataset.k = k;
+    const color = t ? t.color : '#6f7886';
+    d.innerHTML = `<span class="tm">${fmt(it.start, false)}</span>
+      <span class="chip"><i style="background:${color}"></i>${escapeHtml(t ? t.name : (S.legend?.[it.speaker] || it.speaker || '—'))}</span>
+      ${it.text && !/ 發言$/.test(it.text) ? `<span class="tx">${escapeHtml(it.text.slice(0, 120))}</span>` : ''}`;
+    d.onclick = () => {
+      seek(it.start);
+      const vis = W / S.view.pps;
+      if (it.start < S.view.start || it.start > S.view.start + vis) { S.view.start = it.start - vis * 0.1; clampView(); requestDraw(); }
+    };
+    frag.appendChild(d);
+  });
+  box.appendChild(frag);
+}
+let lastHi = -1;
+function highlightTranscript(t) {
+  const items = S.transcript; if (!items.length) return;
+  let lo = 0, hi = items.length - 1, k = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (items[m].start <= t) { k = m; lo = m + 1; } else hi = m - 1; }
+  if (k === lastHi) return;
+  const box = $('#tlist');
+  box.querySelector('.tline.cur')?.classList.remove('cur');
+  const el = box.querySelector(`.tline[data-k="${k}"]`);
+  if (el) { el.classList.add('cur'); if (!$('#pane-tr').hidden) el.scrollIntoView({ block: 'nearest' }); }
+  lastHi = k;
+}
+function afterParse(items, how) {
+  if (!items.length) {
+    $('#trMsg').textContent = '讀不到時間，請確認貼的是 AI 的回覆。';
+    $('#mapBox').hidden = true; return;
+  }
+  S.pending = items; S.pendingMap = null; S.transcript = [];
+  const sp = new Set(items.map(o => o.speaker).filter(Boolean));
+  $('#trMsg').textContent = `${items.length} 段${sp.size ? '・' + sp.size + ' 位講者' : ''}・已套用`;
+  renderMapping(); applyTranscript(true);
+}
+function buildPrompt() {
+  return `你會收到一份 Podcast 的 SRT 字幕，裡面只有說話內容，沒有標示是誰說的。
+請自行判斷這集有幾位講者，以及各自的身分（例如主持人、來賓）。
+請依內容、語氣、稱呼、問答關係，判斷每一句字幕是誰說的。
+
+只輸出以下格式，不要任何其他說明、標題或程式碼框：
+
+A是主持人1
+B是主持人2
+C是來賓
+
+00:00:00.000-00:00:10.000 A
+00:00:10.000-00:00:13.500 B
+00:00:13.500-00:00:18.000 C
+
+規則：
+1. 第一部分每位講者一行：「代號是身分」，代號用 A、B、C…。
+2. 第二部分每行：「開始-結束 代號」，時間格式為 時:分:秒.毫秒。
+3. 時間一律直接取自 SRT 字幕的開始與結束時間，不可自行編造或四捨五入。
+4. 同一人連續說的多句可以合併成一行（從第一句的開始到最後一句的結束）。
+5. 每行只寫一個代號。必須一路輸出到最後一句字幕，不可省略，也不可用「…」或「以下略」代替。`;
+}
+async function copyPrompt() {
+  const txt = buildPrompt();
+  let ok = false;
+  try { await navigator.clipboard.writeText(txt); ok = true; } catch (e) {}
+  if (!ok) {
+    const ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+  }
+  if (!ok) { $('#trText').value = txt; $('#trText').select(); }
+  $('#trCopy').textContent = ok ? '已複製 ✓' : '請手動複製框內文字';
+  setTimeout(() => { $('#trCopy').textContent = '① 複製 AI 指令'; }, 2500);
+}
+async function aiParse() {
+  const srt = $('#trText').value.trim();
+  if (!srt) { $('#trMsg').textContent = '請先把 SRT 貼到上方的框內。'; return; }
+  if (!S.ai) return;
+  const btn = $('#trAI'); btn.disabled = true;
+  $('#trMsg').textContent = 'Claude 判斷中…長的字幕可能需要一兩分鐘。';
+  try {
+    const res = await S.ai(buildPrompt() + '\n\nSRT 字幕如下：\n<<<\n' + srt + '\n>>>', {
+      modelTier: 'complex',
+      onText: ({ text }) => { const n = (text.match(/\d{1,2}:\d{2}.*\n/g) || []).length; if (n) $('#trMsg').textContent = `Claude 判斷中…已完成 ${n} 段`; },
+    });
+    const out = (res.text || '').replace(/```[a-z]*\n?/g, '').trim();
+    $('#trText').value = out;
+    afterParse(parseTranscript(out), res.truncated ? 'Claude 的回覆被截斷，只判斷到一部分' : 'Claude 判斷完成');
+  } catch (err) {
+    if (err && err.code === 'not_granted') { $('#trAI').hidden = true; $('#trMsg').textContent = '沒有取得使用 Claude 的權限，請改用步驟 1 複製指令給其他 AI。'; }
+    else if (err && err.code === 'rate_limited') $('#trMsg').textContent = 'Claude 目前忙碌中，請稍候一分鐘再試。';
+    else $('#trMsg').textContent = '判斷失敗：' + (err?.message || '未知錯誤') + '。可以改用步驟 1 複製指令給其他 AI。';
+  } finally { btn.disabled = false; }
+}
+
+/* ====================== 選取面板 ====================== */
+function renderSel() {
+  const has = !!S.sel;
+  $('#selBox').hidden = !has; $('#selEdit').hidden = !has;
+  if (!has) return;
+  const sel = $('#selTrack');
+  sel.innerHTML = '';
+  S.tracks.forEach((t, i) => sel.add(new Option(t.name, String(i))));
+  sel.value = String(S.sel.ti);
+  const a = document.activeElement;
+  if (a !== $('#selStart')) $('#selStart').value = fmt(S.sel.seg.s);
+  if (a !== $('#selEnd')) $('#selEnd').value = fmt(S.sel.seg.e);
+}
+$('#selTrack').onchange = () => {
+  if (!S.sel) return;
+  const to = Number($('#selTrack').value), { ti, seg } = S.sel;
+  if (to === ti) return;
+  editSeg(() => {
+    S.tracks[ti].segs = S.tracks[ti].segs.filter(g => g !== seg);
+    S.tracks[to].segs.push(seg); S.sel = { ti: to, seg }; normalizeSegs(S.tracks[to]);
+  });
+  status(`已把這段改到「${S.tracks[to].name}」。`);
+};
+function selTimeInput(which) {
+  const el = $(which === 's' ? '#selStart' : '#selEnd');
+  const v = parseTime(el.value);
+  if (!S.sel) return;
+  const g = S.sel.seg;
+  if (!isFinite(v) || (which === 's' ? v >= g.e - 0.02 : v <= g.s + 0.02)) {
+    status('時間格式不對，或開始晚於結束。可輸入 1:23.5 或 83.5。', 'err'); renderSel(); return;
+  }
+  editSeg(() => { g[which] = v; normalizeSegs(S.tracks[S.sel.ti]); });
+}
+$('#selStart').onchange = () => selTimeInput('s');
+$('#selEnd').onchange = () => selTimeInput('e');
+$('#selDel').onclick = deleteSel;
+$('#selSplit').onclick = () => splitAt(curTime());
+$('#selPlay').onclick = () => { if (S.sel) play(Math.max(0, S.sel.seg.s - 0.6), S.sel.seg.e + 0.8); };
+
+/* ====================== 參數 ====================== */
+const PARAMS = [
+  ['pDuck', 'oDuck', () => S.params.duckDb, v => S.params.duckDb = v, v => `${v} dB`, 'duck'],
+  ['pFade', 'oFade', () => S.params.fadeMs, v => S.params.fadeMs = v, v => `${v} ms`, 'duck'],
+  ['pPre', 'oPre', () => S.params.preMs, v => S.params.preMs = v, v => `${v} ms`, 'duck'],
+  ['pPost', 'oPost', () => S.params.postMs, v => S.params.postMs = v, v => `${v} ms`, 'duck'],
+  ['aDom', 'oDom', () => S.an.dominance, v => S.an.dominance = v, v => `${v} dB`, 'an'],
+  ['aGate', 'oGate', () => S.an.gate, v => S.an.gate = v, v => `${v} dB`, 'an'],
+  ['aGap', 'oGap', () => S.an.minGapMs, v => S.an.minGapMs = v, v => `${v} ms`, 'an'],
+  ['aMin', 'oMin', () => S.an.minSegMs, v => S.an.minSegMs = v, v => `${v} ms`, 'an'],
+];
+let anTimer = 0;
+function syncParams() { for (const [i, o, get, , f] of PARAMS) { $('#' + i).value = get(); $('#' + o).textContent = f(get()); } }
+for (const [i, o, , set, f, kind] of PARAMS) {
+  $('#' + i).addEventListener('input', () => {
+    const v = Number($('#' + i).value); set(v); $('#' + o).textContent = f(v); markPresets();
+    if (kind === 'duck') { scheduleAll(); requestDraw(); saveLocalSoon(); }
+    else if (!S.manual && hasAudio()) { clearTimeout(anTimer); anTimer = setTimeout(() => { analyze(true); S.hist.pop(); $('#btnUndo').disabled = !S.hist.length; }, 250); }
+  });
+}
+$('#btnAnalyze').onclick = () => analyze(false);
+const PRESETS = {
+  duck: { low: { duckDb: -10, fadeMs: 150, preMs: 100, postMs: 260 }, mid: { duckDb: -18, fadeMs: 120, preMs: 80, postMs: 220 }, high: { duckDb: -30, fadeMs: 90, preMs: 60, postMs: 180 } },
+  an: { low: { dominance: 4, gate: 8, minGapMs: 600, minSegMs: 150 }, mid: { dominance: 6, gate: 12, minGapMs: 400, minSegMs: 200 }, high: { dominance: 9, gate: 16, minGapMs: 250, minSegMs: 300 } },
+};
+function markPresets() {
+  for (const [id, key, obj] of [['#presetDuck', 'duck', S.params], ['#presetAn', 'an', S.an]]) {
+    $(id).querySelectorAll('button').forEach(b => {
+      const pr = PRESETS[key][b.dataset.v];
+      b.classList.toggle('on', Object.keys(pr).every(k => pr[k] === obj[k]));
+    });
+  }
+}
+$('#presetDuck').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  Object.assign(S.params, PRESETS.duck[b.dataset.v]); syncParams(); markPresets();
+  scheduleAll(); requestDraw(); saveLocalSoon();
+});
+$('#presetAn').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  Object.assign(S.an, PRESETS.an[b.dataset.v]); syncParams(); markPresets();
+  if (hasAudio()) { const wasManual = S.manual; analyze(true); if (wasManual) status('已重新分析（可復原）。'); }
+});
+
+/* ====================== 匯出 ====================== */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crcUpdate(crc, u8) { let c = crc ^ 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function wavHeader(len, ch, sr, bits) {
+  const bps = bits / 8, data = len * ch * bps, b = new ArrayBuffer(44), v = new DataView(b);
+  const w = (o, s) => { for (let i = 0; i < 4; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + data, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true); v.setUint32(24, sr, true);
+  v.setUint32(28, sr * ch * bps, true); v.setUint16(32, ch * bps, true); v.setUint16(34, bits, true);
+  w(36, 'data'); v.setUint32(40, data, true);
+  return new Uint8Array(b);
+}
+async function renderWav(tracks, bits, onProg) {
+  const sr = tracks[0].buffer.sampleRate;
+  const len = Math.max(...tracks.map(t => t.buffer.length));
+  const ch = Math.max(...tracks.map(t => t.buffer.numberOfChannels));
+  const bps = bits / 8;
+  const head = wavHeader(len, ch, sr, bits);
+  let crc = crcUpdate(0, head);
+  const parts = [head];
+  const gfs = tracks.map(t => makeGainFn(intervals(t), false));
+  const datas = tracks.map(t => { const a = []; for (let c = 0; c < t.buffer.numberOfChannels; c++) a.push(t.buffer.getChannelData(c)); return a; });
+  const CH = sr * 2;
+  const gains = tracks.map(() => new Float32Array(CH));
+  for (let st = 0, n = 0; st < len; st += CH, n++) {
+    const m = Math.min(CH, len - st);
+    for (let k = 0; k < tracks.length; k++) { const g = gains[k], f = gfs[k]; for (let i = 0; i < m; i++) g[i] = f((st + i) / sr); }
+    const out = new Uint8Array(m * ch * bps);
+    let o = 0;
+    for (let i = 0; i < m; i++) {
+      const idx = st + i;
+      for (let c = 0; c < ch; c++) {
+        let v = 0;
+        for (let k = 0; k < tracks.length; k++) {
+          const d = datas[k], dc = d[Math.min(c, d.length - 1)];
+          if (idx < dc.length) v += dc[idx] * gains[k][i];
+        }
+        v = v > 1 ? 1 : v < -1 ? -1 : v;
+        if (bits === 24) { const s = Math.round(v * 8388607); out[o++] = s & 255; out[o++] = (s >> 8) & 255; out[o++] = (s >> 16) & 255; }
+        else { const s = Math.round(v * 32767); out[o++] = s & 255; out[o++] = (s >> 8) & 255; }
+      }
+    }
+    crc = crcUpdate(crc, out);
+    parts.push(out);
+    if (n % 4 === 3) { onProg(st / len); await tick(); }
+  }
+  onProg(1);
+  return { blob: new Blob(parts, { type: 'audio/wav' }), crc, size: head.length + len * ch * bps };
+}
+function buildZip(files) {
+  const enc = new TextEncoder(), parts = [], cds = [];
+  let off = 0;
+  const d = new Date();
+  const dosT = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosD = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const f of files) {
+    const name = enc.encode(f.name);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosT, true); lh.setUint16(12, dosD, true); lh.setUint32(14, f.crc, true);
+    lh.setUint32(18, f.size, true); lh.setUint32(22, f.size, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, name, f.blob);
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint16(8, 0x0800, true);
+    cd.setUint16(10, 0, true); cd.setUint16(12, dosT, true); cd.setUint16(14, dosD, true); cd.setUint32(16, f.crc, true);
+    cd.setUint32(20, f.size, true); cd.setUint32(24, f.size, true); cd.setUint16(28, name.length, true);
+    cd.setUint16(30, 0, true); cd.setUint16(32, 0, true); cd.setUint16(34, 0, true); cd.setUint16(36, 0, true);
+    cd.setUint32(38, 0, true); cd.setUint32(42, off, true);
+    cds.push(cd.buffer, name);
+    off += 30 + name.length + f.size;
+  }
+  const cdSize = cds.reduce((a, b) => a + b.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...cds, end.buffer], { type: 'application/zip' });
+}
+function safeName(s) { return String(s).replace(/[\\/:*?"<>|]+/g, '_').trim() || 'track'; }
+const IN_CLAUDE = !!(window.claude && typeof window.claude.use === 'function');
+let dlUrls = [], lastSave = null;
+function showLinks(files) {
+  dlUrls.forEach(u => URL.revokeObjectURL(u)); dlUrls = [];
+  const box = $('#exLinks'); box.innerHTML = '';
+  for (const f of files) {
+    const u = URL.createObjectURL(f.blob); dlUrls.push(u);
+    const a = document.createElement('a'); a.href = u; a.download = f.name; a.className = 'dl'; a.textContent = '⬇ ' + f.name;
+    box.appendChild(a);
+  }
+  box.hidden = false;
+  return [...box.querySelectorAll('a')];
+}
+async function getDl() {
+  if (S.dl) return S.dl;
+  if (!IN_CLAUDE) return null;
+  let x = dlPromise ? await dlPromise : null;   // claude.use 最多 10 秒內一定會回覆
+  if (!x) { dlPromise = window.claude.use('downloads').then(v => (S.dl = v)).catch(() => null); x = await dlPromise; }
+  return x;
+}
+// 回傳：saved / links / declined / too_large / rate_limited / unavailable
+async function saveFiles(files, zipName) {
+  lastSave = { files, zipName };
+  if (IN_CLAUDE) {
+    const dl = await getDl();
+    if (!dl) return 'unavailable';
+    const single = files.length === 1 && /\.json$/i.test(files[0].name);
+    try { await dl.save({ filename: single ? files[0].name : zipName, data: single ? files[0].blob : buildZip(files) }); return 'saved'; }
+    catch (err) { return err?.code || 'unavailable'; }
+  }
+  const links = showLinks(files);
+  for (const a of links) { a.click(); await new Promise(r => setTimeout(r, 700)); }
+  return 'links';
+}
+function saveMsg(r, n) {
+  return {
+    saved: '完成。',
+    links: '已開始下載。沒出現的話，點下方檔名。',
+    declined: '已取消。',
+    too_large: '檔案太大，請改用 16-bit 或不勾混音。',
+    rate_limited: '下載視窗還開著，請稍後按「再下載一次」。',
+  }[r] || '下載沒有回應，請按「再下載一次」；還是不行就重新整理頁面。';
+}
+function exSuffix() { return $('#exSuffix').value; }
+function baseName(t) { return t.fileName ? t.fileName.replace(/\.[^.]+$/, '') : t.name; }
+function outName(base, ext) { return safeName(base + exSuffix()) + ext; }
+function updatePreview() {
+  const t = loaded()[0];
+  $('#exPreview').textContent = '例：' + outName(t ? baseName(t) : '原始檔名', '.wav');
+  try { localStorage.setItem('ducker:suffix', exSuffix()); } catch (e) {}
+}
+$('#exSuffix').addEventListener('input', updatePreview);
+try { const v = localStorage.getItem('ducker:suffix'); if (v != null) $('#exSuffix').value = v; } catch (e) {}
+$('#exRetry').onclick = async () => {
+  if (!lastSave) return;
+  const r = await saveFiles(lastSave.files, lastSave.zipName);
+  $('#exMsg').textContent = saveMsg(r);
+  $('#exRetry').hidden = !(r === 'rate_limited' || r === 'unavailable' || r === 'declined');
+};
+$('#btnExport').onclick = async () => {
+  const L = loaded();
+  if (!L.length) { $('#exMsg').textContent = '請先載入音檔。'; return; }
+  const btn = $('#btnExport'); btn.disabled = true; $('#exRetry').hidden = true;
+  lastSave = null; dlUrls.forEach(u => URL.revokeObjectURL(u)); dlUrls = []; $('#exLinks').hidden = true;
+  const bits = Number($('#exBits').value);
+  const prog = $('#exProg'), bar = prog.firstElementChild; prog.hidden = false;
+  const used = new Set(), uniq = n => { let m = n, k = 2; while (used.has(m)) m = n.replace(/(\.[^.]+)$/, `_${k++}$1`); used.add(m); return m; };
+  const jobs = L.map(t => ({ name: uniq(outName(baseName(t), '.wav')), tracks: [t] }));
+  if ($('#exMix').checked && L.length > 1) jobs.push({ name: uniq(outName('混音', '.wav')), tracks: L });
+  const files = [];
+  try {
+    for (let j = 0; j < jobs.length; j++) {
+      $('#exMsg').textContent = `處理中 ${j + 1}/${jobs.length}`;
+      const r = await renderWav(jobs[j].tracks, bits, p => { bar.style.width = ((j + p) / jobs.length * 100).toFixed(1) + '%'; });
+      files.push({ name: jobs[j].name, ...r });
+    }
+    if ($('#exJson').checked) {
+      const txt = JSON.stringify(projectData(), null, 1), u8 = new TextEncoder().encode(txt);
+      files.push({ name: uniq(outName('段落資料', '.json')), blob: new Blob([u8]), crc: crcUpdate(0, u8), size: u8.length });
+    }
+    $('#exMsg').textContent = '準備下載…';
+    const r = await saveFiles(files, outName('Podcast', '.zip'));
+    $('#exMsg').textContent = saveMsg(r);
+    $('#exRetry').hidden = !(r === 'rate_limited' || r === 'unavailable' || r === 'declined');
+  } catch (err) {
+    $('#exMsg').textContent = '匯出失敗：' + (err?.message || err) + '。可改用 16-bit 或不勾混音再試。';
+  } finally { btn.disabled = false; setTimeout(() => { prog.hidden = true; bar.style.width = '0'; }, 1500); }
+};
+
+/* ====================== 專案儲存 ====================== */
+function projectData() {
+  return {
+    app: 'podcast-ducker', version: 1,
+    params: { ...S.params }, analysis: { ...S.an },
+    tracks: S.tracks.map(t => ({ name: t.name, fileName: t.fileName, segments: t.segs.map(g => ({ start: +g.s.toFixed(3), end: +g.e.toFixed(3) })) })),
+    transcript: S.transcript.map(o => ({ start: o.start, end: o.end, speaker: o.speaker, text: o.text, track: o.track })),
+  };
+}
+function applyProject(p) {
+  if (!p || !Array.isArray(p.tracks)) { status('這不是本工具的專案檔。', 'err'); return; }
+  const prev = snap();
+  Object.assign(S.params, p.params || {}); Object.assign(S.an, p.analysis || {});
+  p.tracks.forEach((pt, i) => {
+    if (i >= MAX_TRACKS) return;
+    while (S.tracks.length <= i) S.tracks.push(newTrack());
+    const t = S.tracks[i];
+    if (pt.name) t.name = pt.name;
+    t.segs = (pt.segments || []).map(g => ({ s: +g.start, e: +g.end })).filter(g => isFinite(g.s) && isFinite(g.e));
+    normalizeSegs(t);
+  });
+  S.transcript = Array.isArray(p.transcript) ? p.transcript : [];
+  S.sel = null; S.manual = true;
+  pushHist(prev);
+  syncParams(); markPresets(); renderHeads(); resize(); renderTranscriptList(); changed();
+  status('已還原專案的段落與設定。', 'ok');
+}
+$('#btnSaveProj').onclick = async () => {
+  const txt = JSON.stringify(projectData(), null, 1), u8 = new TextEncoder().encode(txt);
+  const r = await saveFiles([{ name: outName('專案', '.json'), blob: new Blob([u8]), crc: crcUpdate(0, u8), size: u8.length }], 'project.zip');
+  status(r === 'saved' || r === 'links' ? '專案已儲存。' : saveMsg(r), r === 'saved' || r === 'links' ? 'ok' : 'err');
+};
+$('#btnOpenProj').onclick = () => $('#projFile').click();
+$('#projFile').onchange = async () => {
+  const f = $('#projFile').files[0]; $('#projFile').value = '';
+  if (!f) return;
+  try { applyProject(JSON.parse(await f.text())); } catch (e) { status('無法讀取專案檔，檔案可能損毀。', 'err'); }
+};
+function localKey() { const L = loaded(); return L.length && !S.demo ? 'ducker:' + L.map(t => t.fileName + ':' + t.fileSize).join('|') : null; }
+let saveTimer = 0;
+function saveLocalSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { const k = localKey(); if (!k || !S.manual) return; try { localStorage.setItem(k, JSON.stringify(projectData())); } catch (e) {} }, 800);
+}
+function loadLocal() { const k = localKey(); if (!k) return null; try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+
+/* ====================== 示範音檔 ====================== */
+const DEMO_TRANSCRIPT = `A是主持人
+B是來賓 A
+C是來賓 B
+
+00:00:00.400-00:00:07.600 A
+00:00:08.100-00:00:21.000 B
+00:00:21.500-00:00:25.000 A
+00:00:25.500-00:00:38.000 C
+00:00:38.000-00:00:39.000 B
+00:00:40.000-00:00:44.000 A
+00:00:44.500-00:00:58.000 B
+00:00:59.000-00:01:10.000 C
+00:01:10.500-00:01:16.000 A
+00:01:16.400-00:01:24.000 B
+00:01:24.500-00:01:29.000 A`;
+function makeDemo() {
+  pause();
+  const sr = 24000, dur = 90, n = sr * dur;
+  let seed = 12345; const R = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const spk = [{ name: '主持人', f0: 118 }, { name: '來賓 A', f0: 205 }, { name: '來賓 B', f0: 152 }];
+  const turns = [[0, 0.5, 7.5], [1, 8.2, 21], [0, 14.0, 14.45], [0, 21.6, 25], [2, 25.6, 38], [1, 37.2, 39], [0, 40, 44],
+    [1, 44.6, 58], [2, 50.2, 50.6], [2, 59, 70], [0, 70.5, 76], [1, 76.4, 84], [0, 84.6, 89]];
+  const voices = spk.map(() => new Float32Array(n));
+  for (const [si, a, b] of turns) {
+    const v = voices[si], f0 = spk[si].f0;
+    let t = a;
+    while (t < b) {
+      const syl = 0.11 + R() * 0.2, gap = R() < 0.12 ? 0.25 + R() * 0.35 : 0.03 + R() * 0.08;
+      const s0 = Math.floor(t * sr), s1 = Math.min(Math.floor(Math.min(b, t + syl) * sr), n);
+      const amp = 0.18 + R() * 0.12, pitch = f0 * (1 + (R() - 0.5) * 0.18), glide = (R() - 0.5) * 0.25;
+      const hw = [1, 0.55 + R() * 0.4, 0.3 + R() * 0.5, 0.2 + R() * 0.4, 0.12 + R() * 0.25, 0.08 + R() * 0.15];
+      let ph = 0;
+      const L = Math.max(1, s1 - s0);
+      for (let i = s0; i < s1; i++) {
+        const x = (i - s0) / L;
+        const env = Math.sin(Math.PI * Math.min(1, x * 1.15)) ** 1.5;
+        ph += 2 * Math.PI * pitch * (1 + glide * x) / sr;
+        let s = 0; for (let k = 0; k < 6; k++) s += hw[k] * Math.sin(ph * (k + 1)) / (k + 1);
+        v[i] += amp * env * (s * 0.8 + (R() - 0.5) * 0.12);
+      }
+      t += syl + gap;
+    }
+  }
+  const bleed = [[1, 0.16, 0.13], [0.15, 1, 0.2], [0.55, 0.6, 2.2]];  // 第三軌：增益偏高、串音很重（模擬便宜麥克風）
+  S.tracks = [];
+  for (let i = 0; i < 3; i++) {
+    const t = newTrackReset(i); t.name = spk[i].name; t.fileName = '示範音檔（合成）';
+    const buf = new AudioBuffer({ length: n, sampleRate: sr, numberOfChannels: 1 });
+    const d = buf.getChannelData(0);
+    for (let j = 0; j < n; j++) {
+      d[j] = voices[0][j] * bleed[i][0] + voices[1][j] * bleed[i][1] + voices[2][j] * bleed[i][2] + (R() - 0.5) * 0.003;
+    }
+    t.buffer = buf; computeFeatures(t);
+    S.tracks.push(t);
+  }
+  S.demo = true; S.transcript = []; S.pending = null; S.pos = 0; S.hist = []; S.future = [];
+  $('#trText').value = DEMO_TRANSCRIPT; $('#mapBox').hidden = true; $('#trMsg').textContent = '';
+  $('#demoBanner').hidden = false;
+  updateDuration(); renderHeads(); resize();
+  S.view.start = 0; S.view.pps = minPps(); clampView(); syncZoom();
+  analyze(true); S.hist = []; changed();
+  renderTranscriptList();
+}
+
+/* ====================== 綁定 ====================== */
+$('#btnOpenAll').onclick = () => $('#fileAll').click();
+$('#fileAll').onchange = () => { const f = [...$('#fileAll').files]; $('#fileAll').value = ''; if (f.length) loadFilesFrom(S.demo ? 0 : firstEmpty(), f); };
+function firstEmpty() { const i = S.tracks.findIndex(t => !t.buffer); return i < 0 ? 0 : i; }
+$('#btnDemo').onclick = () => { makeDemo(); status('已載入示範。', 'ok'); };
+$('#revPrev').onclick = () => goReview(-1); $('#revNext').onclick = () => goReview(1);
+$('#btnUndo').onclick = undo;
+$('#btnRedo').onclick = redo;
+$('#btnPlay').onclick = togglePlay;
+$('#btnHome').onclick = () => seek(0);
+$('#btnBypass').onclick = () => {
+  S.bypass = !S.bypass; $('#btnBypass').classList.toggle('on', S.bypass);
+  $('#btnBypass').textContent = S.bypass ? '正在聽原始音檔' : '聽原始音檔';
+  scheduleAll(); requestDraw();
+};
+$('#zoom').addEventListener('input', () => {
+  const lo = Math.log(minPps()), hi = Math.log(3000);
+  const p = Math.exp(lo + (hi - lo) * $('#zoom').value / 1000);
+  const ct = curTime(); const ax = timeToX(ct);
+  const anchorX = ax >= 0 && ax <= W ? ax : W / 2;
+  setPps(p, xToTime(anchorX), anchorX);
+});
+for (const id of ['duck', 'tr', 'ex']) {
+  $('#tab-' + id).onclick = () => {
+    for (const j of ['duck', 'tr', 'ex']) { $('#tab-' + j).setAttribute('aria-selected', String(j === id)); $('#pane-' + j).hidden = j !== id; }
+  };
+}
+$('#trPick').onclick = () => $('#trFile').click();
+$('#trFile').onchange = async () => {
+  const f = $('#trFile').files[0]; $('#trFile').value = '';
+  if (!f) return;
+  $('#trText').value = await f.text();
+  afterParse(parseTranscript($('#trText').value), f.name);
+};
+let trTimer = 0;
+$('#trText').addEventListener('input', () => {
+  clearTimeout(trTimer);
+  trTimer = setTimeout(() => { const v = $('#trText').value.trim(); if (v && v !== buildPrompt().trim()) afterParse(parseTranscript(v), ''); }, 500);
+});
+$('#trAI').onclick = aiParse;
+$('#trCopy').onclick = copyPrompt;
+
+let dlPromise = null;
+try {
+  if (window.claude && typeof window.claude.use === 'function') {
+    dlPromise = window.claude.use('downloads').then(x => (S.dl = x)).catch(() => null);
+    window.claude.use('sample').then(x => { S.ai = x; $('#trAI').hidden = !x; }).catch(() => {});
+  }
+} catch (e) {}
+updatePreview();
+
+new ResizeObserver(resize).observe($('#cvwrap'));
+window.addEventListener('resize', resize);
+syncParams();
+markPresets();
+makeDemo();
+status('');
+</script>
+</body>
+</html>
